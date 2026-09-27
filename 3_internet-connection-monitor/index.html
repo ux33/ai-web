@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Internet Connection Monitor</title>
+  <style>
+    body{font-family:system-ui,Arial;max-width:900px;margin:20px;}
+    #log{white-space:pre-wrap;background:#f7f7f7;padding:10px;border-radius:6px;height:400px;overflow:auto;}
+    .btn{padding:8px 12px;margin:6px;border-radius:6px;border:1px solid #ccc;cursor:pointer;background:#fff;}
+  </style>
+</head>
+<body>
+  <h2>Internet Connection Monitor</h2>
+  <p>
+    Мониторинг интернет-соединения в реальном времени.
+    Периодически проверяет доступность указанного URL,
+    фиксирует изменения статуса с отметкой времени и позволяет сохранить журнал проверок.
+  </p>
+  <div>
+    Интервал проверки (сек): <input id="interval" type="number" value="5" min="1" style="width:60px">
+    URL для проверки: <input id="url" type="text" value="https://www.google.com/generate_204" style="width:340px">
+    <button id="start" class="btn">Старт</button>
+    <button id="stop" class="btn">Стоп</button>
+    <button id="clear" class="btn">Очистить лог</button>
+    <button id="export" class="btn">Скачать лог</button>
+  </div>
+  <p>Лог событий (время по системе):</p>
+  <div id="log"></div>
+
+<script>
+(function(){
+  const logEl = document.getElementById('log');
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
+  const clearBtn = document.getElementById('clear');
+  const exportBtn = document.getElementById('export');
+  const urlInput = document.getElementById('url');
+  const intervalInput = document.getElementById('interval');
+
+  let timer = null;
+  let lastStatus = null; // true = online, false = offline
+  let events = [];
+
+  function now(){ return new Date().toLocaleString(); }
+  function append(text){
+    events.push(text);
+    logEl.textContent += text + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function checkOnce(){
+    const u = urlInput.value || 'https://www.google.com/generate_204';
+    try{
+      // Use fetch with small timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(()=>controller.abort(), 4000);
+      const r = await fetch(u, {method:'GET', mode:'no-cors', cache:'no-store', signal: controller.signal});
+      clearTimeout(timeout);
+      // if we reached here, assume network OK
+      handleStatus(true);
+    }catch(e){
+      handleStatus(false);
+    }
+  }
+
+  function handleStatus(isOnline){
+    if (lastStatus === null){
+      lastStatus = isOnline;
+      append(`[${now()}] Стартовый статус: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
+      return;
+    }
+    if (isOnline !== lastStatus){
+      lastStatus = isOnline;
+      append(`[${now()}] СМЕНА: ${isOnline ? 'INTERNET ПОДКЛЮЧЁН' : 'INTERNET ОТКЛЮЧЁН'}`);
+    } else {
+      // optional: log periodic keep-alive
+      append(`[${now()}] Статус: ${isOnline ? 'online' : 'offline'}`);
+    }
+  }
+
+  function start(){
+    if (timer) return;
+    append(`[${now()}] Монитор запущен (интервал ${intervalInput.value}s)`);
+    checkOnce();
+    timer = setInterval(checkOnce, Math.max(1000, parseInt(intervalInput.value,10)*1000));
+  }
+  function stop(){
+    if (!timer) return;
+    clearInterval(timer); timer = null;
+    append(`[${now()}] Монитор остановлен`);
+  }
+
+  startBtn.onclick = start;
+  stopBtn.onclick = stop;
+  clearBtn.onclick = () => { events=[]; logEl.textContent=''; };
+  exportBtn.onclick = () => {
+    const blob = new Blob([events.join('\n')], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'internet-log.txt'; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 500);
+  };
+
+  // auto-start
+  //start();
+})();
+</script>
+</body>
+</html>
