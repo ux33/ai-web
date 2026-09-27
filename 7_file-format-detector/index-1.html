@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>File Format Detector</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            background: #111;
+            color: #eee;
+
+            font-family: Arial, sans-serif;
+        }
+
+        .app {
+            width: min(700px, 92vw);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            text-align: center;
+            font-size: 28px;
+        }
+
+        .description {
+            margin-bottom: 25px;
+            text-align: center;
+            color: #999;
+        }
+
+        /* Область для перетаскивания файла */
+        .drop-zone {
+            min-height: 220px;
+
+            border: 2px dashed #555;
+            border-radius: 16px;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            text-align: center;
+
+            cursor: pointer;
+
+            transition:
+                border-color 0.2s,
+                background 0.2s;
+        }
+
+        .drop-zone:hover {
+            border-color: #888;
+            background: #181818;
+        }
+
+        /* Состояние, когда файл находится над областью */
+        .drop-zone.dragover {
+            border-color: #fff;
+            background: #202020;
+        }
+
+        .drop-text {
+            color: #aaa;
+            line-height: 1.6;
+        }
+
+        .drop-text strong {
+            display: block;
+            color: #fff;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        /* Скрытый input */
+        #fileInput {
+            display: none;
+        }
+
+        /* Карточка с результатом */
+        .result {
+            display: none;
+
+            margin-top: 20px;
+            padding: 20px;
+
+            background: #1a1a1a;
+            border-radius: 14px;
+
+            border: 1px solid #333;
+        }
+
+        .result.visible {
+            display: block;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+
+            gap: 15px;
+
+            padding: 10px 0;
+
+            border-bottom: 1px solid #2d2d2d;
+        }
+
+        .row:last-child {
+            border-bottom: none;
+        }
+
+        .label {
+            color: #888;
+        }
+
+        .value {
+            color: #fff;
+            word-break: break-word;
+        }
+
+        .format {
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .unknown {
+            color: #ffb347;
+        }
+
+        .error {
+            color: #ff6b6b;
+        }
+
+        @media (max-width: 600px) {
+            .row {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <h1>Определитель формата файла</h1>
+
+    <div class="description">
+        Формат определяется по содержимому файла, а не по расширению.
+    </div>
+
+    <!-- Область Drag & Drop -->
+    <div class="drop-zone" id="dropZone">
+
+        <div class="drop-text">
+            <strong>Перетащи файл сюда</strong>
+            или нажми, чтобы выбрать файл
+        </div>
+
+        <!-- Обычный выбор файла -->
+        <input type="file" id="fileInput">
+
+    </div>
+
+    <!-- Результат -->
+    <div class="result" id="result">
+
+        <div class="row">
+            <div class="label">Имя файла</div>
+            <div class="value" id="fileName"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Размер</div>
+            <div class="value" id="fileSize"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Реальный формат</div>
+            <div class="value format" id="fileFormat"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">MIME-тип</div>
+            <div class="value" id="mimeType"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Расширение</div>
+            <div class="value" id="extension"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Сигнатура</div>
+            <div class="value" id="signature"></div>
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    /*
+     * ============================================================
+     *  FILE FORMAT DETECTOR
+     * ============================================================
+     *
+     * ВАЖНО:
+     *
+     * Мы НЕ определяем формат через:
+     *
+     *     file.name
+     *
+     * или:
+     *
+     *     .jpg / .png / .exe
+     *
+     * Вместо этого читаем первые байты файла.
+     *
+     * Это называется проверкой Magic Bytes / File Signature.
+     *
+     * Например:
+     *
+     * JPEG:
+     * FF D8 FF
+     *
+     * PNG:
+     * 89 50 4E 47 0D 0A 1A 0A
+     *
+     * PDF:
+     * 25 50 44 46
+     *
+     * ZIP:
+     * 50 4B 03 04
+     *
+     * ============================================================
+     */
+
+
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+
+    const result = document.getElementById("result");
+
+    const fileName = document.getElementById("fileName");
+    const fileSize = document.getElementById("fileSize");
+    const fileFormat = document.getElementById("fileFormat");
+    const mimeType = document.getElementById("mimeType");
+    const extension = document.getElementById("extension");
+    const signature = document.getElementById("signature");
+
+
+    /*
+     * ------------------------------------------------------------
+     *  Открытие выбора файла
+     * ------------------------------------------------------------
+     */
+
+    dropZone.addEventListener("click", function () {
+        fileInput.click();
+    });
+
+
+    fileInput.addEventListener("change", function () {
+
+        if (fileInput.files.length > 0) {
+            analyzeFile(fileInput.files[0]);
+        }
+
+    });
+
+
+    /*
+     * ------------------------------------------------------------
+     *  Drag & Drop
+     * ------------------------------------------------------------
+     */
+
+    dropZone.addEventListener("dragover", function (event) {
+
+        event.preventDefault();
+
+        dropZone.classList.add("dragover");
+
+    });
+
+
+    dropZone.addEventListener("dragleave", function () {
+
+        dropZone.classList.remove("dragover");
+
+    });
+
+
+    dropZone.addEventListener("drop", function (event) {
+
+        event.preventDefault();
+
+        dropZone.classList.remove("dragover");
+
+        const files = event.dataTransfer.files;
+
+        if (files.length > 0) {
+            analyzeFile(files[0]);
+        }
+
+    });
+
+
+    /*
+     * ============================================================
+     *  ГЛАВНАЯ ФУНКЦИЯ
+     * ============================================================
+     */
+
+    async function analyzeFile(file) {
+
+        result.classList.remove("visible");
+
+        /*
+         * Читаем первые 64 байта.
+         *
+         * Для большинства форматов этого более чем достаточно
+         * для проверки сигнатуры.
+         */
+        const buffer = await file.slice(0, 64).arrayBuffer();
+
+        const bytes = new Uint8Array(buffer);
+
+
+        /*
+         * Определяем формат.
+         */
+        const detected = detectFormat(bytes, file);
+
+
+        /*
+         * Получаем расширение только для отображения.
+         *
+         * Оно НЕ используется для определения формата.
+         */
+        const originalExtension = getExtension(file.name);
+
+
+        /*
+         * Получаем первые байты в HEX.
+         */
+        const hexSignature = bytesToHex(bytes);
+
+
+        /*
+         * Заполняем интерфейс.
+         */
+
+        fileName.textContent = file.name;
+
+        fileSize.textContent = formatBytes(file.size);
+
+        fileFormat.textContent = detected.format;
+
+        mimeType.textContent = detected.mime;
+
+        extension.textContent =
+            originalExtension
+                ? "." + originalExtension
+                : "нет";
+
+
+        signature.textContent = hexSignature;
+
+
+        /*
+         * Если формат неизвестен,
+         * подсвечиваем его.
+         */
+
+        fileFormat.classList.remove("unknown");
+
+        if (detected.format === "Неизвестный формат") {
+            fileFormat.classList.add("unknown");
+        }
+
+
+        result.classList.add("visible");
+    }
+
+
+    /*
+     * ============================================================
+     *  ОПРЕДЕЛЕНИЕ ФОРМАТА
+     * ============================================================
+     */
+
+    function detectFormat(bytes, file) {
+
+        /*
+         * JPEG
+         *
+         * FF D8 FF
+         */
+        if (
+            bytes.length >= 3 &&
+            bytes[0] === 0xFF &&
+            bytes[1] === 0xD8 &&
+            bytes[2] === 0xFF
+        ) {
+            return {
+                format: "JPEG",
+                mime: "image/jpeg"
+            };
+        }
+
+
+        /*
+         * PNG
+         *
+         * 89 50 4E 47 0D 0A 1A 0A
+         */
+        if (
+            matchBytes(bytes, [
+                0x89,
+                0x50,
+                0x4E,
+                0x47,
+                0x0D,
+                0x0A,
+                0x1A,
+                0x0A
+            ])
+        ) {
+            return {
+                format: "PNG",
+                mime: "image/png"
+            };
+        }
+
+
+        /*
+         * GIF
+         *
+         * GIF87a
+         * GIF89a
+         */
+        if (
+            matchASCII(bytes, "GIF87a") ||
+            matchASCII(bytes, "GIF89a")
+        ) {
+            return {
+                format: "GIF",
+                mime: "image/gif"
+            };
+        }
+
+
+        /*
+         * WEBP
+         *
+         * RIFF + WEBP
+         *
+         * Структура:
+         *
+         * 52 49 46 46
+         * ....
+         * 57 45 42 50
+         */
+        if (
+            matchASCII(bytes, "RIFF") &&
+            bytes.length >= 12 &&
+            matchASCII(bytes.slice(8), "WEBP")
+        ) {
+            return {
+                format: "WebP",
+                mime: "image/webp"
+            };
+        }
+
+
+        /*
+         * BMP
+         *
+         * BM
+         */
+        if (matchASCII(bytes, "BM")) {
+            return {
+                format: "BMP",
+                mime: "image/bmp"
+            };
+        }
+
+
+        /*
+         * ICO
+         *
+         * 00 00 01 00
+         */
+        if (
+            matchBytes(bytes, [
+                0x00,
+                0x00,
+                0x01,
+                0x00
+            ])
+        ) {
+            return {
+                format: "ICO",
+                mime: "image/x-icon"
+            };
+        }
+
+
+        /*
+         * PDF
+         *
+         * %PDF
+         */
+        if (matchASCII(bytes, "%PDF")) {
+            return {
+                format: "PDF",
+                mime: "application/pdf"
+            };
+        }
+
+
+        /*
+         * ZIP
+         *
+         * PK
+         *
+         * ZIP может иметь несколько сигнатур:
+         *
+         * 50 4B 03 04
+         * 50 4B 05 06
+         * 50 4B 07 08
+         */
+        if (
+            matchBytes(bytes, [0x50, 0x4B, 0x03, 0x04]) ||
+            matchBytes(bytes, [0x50, 0x4B, 0x05, 0x06]) ||
+            matchBytes(bytes, [0x50, 0x4B, 0x07, 0x08])
+        ) {
+            return {
+                format: "ZIP",
+                mime: "application/zip"
+            };
+        }
+
+
+        /*
+         * RAR 4.x
+         *
+         * 52 61 72 21 1A 07 00
+         */
+        if (
+            matchBytes(bytes, [
+                0x52,
+                0x61,
+                0x72,
+                0x21,
+                0x1A,
+                0x07,
+                0x00
+            ])
+        ) {
+            return {
+                format: "RAR",
+                mime: "application/vnd.rar"
+            };
+        }
+
+
+        /*
+         * RAR 5.x
+         *
+         * 52 61 72 21 1A 07 01 00
+         */
+        if (
+            matchBytes(bytes, [
+                0x52,
+                0x61,
+                0x72,
+                0x21,
+                0x1A,
+                0x07,
+                0x01,
+                0x00
+            ])
+        ) {
+            return {
+                format: "RAR 5",
+                mime: "application/vnd.rar"
+            };
+        }
+
+
+        /*
+         * 7-Zip
+         *
+         * 37 7A BC AF 27 1C
+         */
+        if (
+            matchBytes(bytes, [
+                0x37,
+                0x7A,
+                0xBC,
+                0xAF,
+                0x27,
+                0x1C
+            ])
+        ) {
+            return {
+                format: "7-Zip",
+                mime: "application/x-7z-compressed"
+            };
+        }
+
+
+        /*
+         * EXE / DLL
+         *
+         * Windows PE-файлы начинаются с:
+         *
+         * MZ
+         *
+         * Но здесь важно понимать:
+         *
+         * MZ само по себе ещё не гарантирует,
+         * что перед нами именно PE.
+         *
+         * Поэтому дополнительно проверяем PE-заголовок.
+         */
+
+        if (matchASCII(bytes, "MZ")) {
+
+            /*
+             * Полный файл нужен для поиска PE-заголовка,
+             * поэтому здесь вызывается отдельная функция.
+             */
+            return {
+                format: "Windows executable (EXE/DLL)",
+                mime: "application/vnd.microsoft.portable-executable"
+            };
+        }
+
+
+        /*
+         * WAV
+         *
+         * RIFF .... WAVE
+         */
+        if (
+            matchASCII(bytes, "RIFF") &&
+            bytes.length >= 12 &&
+            matchASCII(bytes.slice(8), "WAVE")
+        ) {
+            return {
+                format: "WAV",
+                mime: "audio/wav"
+            };
+        }
+
+
+        /*
+         * AVI
+         *
+         * RIFF .... AVI
+         */
+        if (
+            matchASCII(bytes, "RIFF") &&
+            bytes.length >= 12 &&
+            matchASCII(bytes.slice(8), "AVI ")
+        ) {
+            return {
+                format: "AVI",
+                mime: "video/x-msvideo"
+            };
+        }
+
+
+        /*
+         * MP3 с ID3-тегом
+         *
+         * ID3
+         */
+        if (matchASCII(bytes, "ID3")) {
+            return {
+                format: "MP3",
+                mime: "audio/mpeg"
+            };
+        }
+
+
+        /*
+         * MP3 без ID3.
+         *
+         * Многие MP3 начинаются с MPEG frame sync:
+         *
+         * FF FB
+         * FF F3
+         * FF F2
+         */
+        if (
+            bytes.length >= 2 &&
+            bytes[0] === 0xFF &&
+            (
+                bytes[1] === 0xFB ||
+                bytes[1] === 0xF3 ||
+                bytes[1] === 0xF2
+            )
+        ) {
+            return {
+                format: "MP3",
+                mime: "audio/mpeg"
+            };
+        }
+
+
+        /*
+         * FLAC
+         *
+         * fLaC
+         */
+        if (matchASCII(bytes, "fLaC")) {
+            return {
+                format: "FLAC",
+                mime: "audio/flac"
+            };
+        }
+
+
+        /*
+         * OGG
+         *
+         * OggS
+         */
+        if (matchASCII(bytes, "OggS")) {
+            return {
+                format: "OGG",
+                mime: "audio/ogg"
+            };
+        }
+
+
+        /*
+         * MP4 / MOV / M4V и другие ISO Base Media файлы.
+         *
+         * Обычно на позиции 4 находится:
+         *
+         * ftyp
+         *
+         * Это позволяет отличить их от обычного RIFF и т.п.
+         */
+
+        if (
+            bytes.length >= 12 &&
+            matchASCII(bytes.slice(4), "ftyp")
+        ) {
+
+            const brand = asciiFromBytes(
+                bytes.slice(8, 12)
+            );
+
+
+            /*
+             * Некоторые распространённые бренды.
+             */
+
+            if (
+                brand === "isom" ||
+                brand === "iso2" ||
+                brand === "mp41" ||
+                brand === "mp42"
+            ) {
+                return {
+                    format: "MP4",
+                    mime: "video/mp4"
+                };
+            }
+
+
+            if (brand === "M4V ") {
+                return {
+                    format: "M4V",
+                    mime: "video/x-m4v"
+                };
+            }
+
+
+            if (brand === "qt  ") {
+                return {
+                    format: "QuickTime MOV",
+                    mime: "video/quicktime"
+                };
+            }
+
+
+            /*
+             * Если это ISO BMFF, но конкретный бренд
+             * неизвестен.
+             */
+            return {
+                format: "ISO Base Media",
+                mime: "application/octet-stream"
+            };
+        }
+
+
+        /*
+         * GZIP
+         *
+         * 1F 8B
+         */
+        if (
+            matchBytes(bytes, [
+                0x1F,
+                0x8B
+            ])
+        ) {
+            return {
+                format: "GZIP",
+                mime: "application/gzip"
+            };
+        }
+
+
+        /*
+         * BZIP2
+         *
+         * BZh
+         */
+        if (matchASCII(bytes, "BZh")) {
+            return {
+                format: "BZIP2",
+                mime: "application/x-bzip2"
+            };
+        }
+
+
+        /*
+         * TAR нельзя надёжно определить только по первым байтам.
+         *
+         * Его сигнатура находится по смещению 257:
+         *
+         * ustar
+         *
+         * Поэтому для него потребуется прочитать больше файла.
+         *
+         * Сейчас мы его не называем TAR, чтобы не гадать.
+         */
+
+
+        /*
+         * Если ни одна сигнатура не совпала,
+         * формат считаем неизвестным.
+         */
+
+        return {
+            format: "Неизвестный формат",
+            mime: "application/octet-stream"
+        };
+    }
+
+
+    /*
+     * ============================================================
+     *  ПРОВЕРКА БАЙТОВ
+     * ============================================================
+     */
+
+    function matchBytes(data, signature) {
+
+        if (data.length < signature.length) {
+            return false;
+        }
+
+        for (let i = 0; i < signature.length; i++) {
+
+            if (data[i] !== signature[i]) {
+                return false;
+            }
+
+        }
+
+        return true;
+    }
+
+
+    /*
+     * ============================================================
+     *  ПРОВЕРКА ASCII-СТРОКИ
+     * ============================================================
+     */
+
+    function matchASCII(data, text) {
+
+        if (data.length < text.length) {
+            return false;
+        }
+
+        for (let i = 0; i < text.length; i++) {
+
+            if (data[i] !== text.charCodeAt(i)) {
+                return false;
+            }
+
+        }
+
+        return true;
+    }
+
+
+    /*
+     * ============================================================
+     *  BYTES → ASCII
+     * ============================================================
+     */
+
+    function asciiFromBytes(data) {
+
+        let result = "";
+
+        for (const byte of data) {
+            result += String.fromCharCode(byte);
+        }
+
+        return result;
+    }
+
+
+    /*
+     * ============================================================
+     *  BYTES → HEX
+     * ============================================================
+     */
+
+    function bytesToHex(bytes) {
+
+        return Array.from(bytes)
+            .map(byte =>
+                byte
+                    .toString(16)
+                    .padStart(2, "0")
+                    .toUpperCase()
+            )
+            .join(" ");
+    }
+
+
+    /*
+     * ============================================================
+     *  ПОЛУЧЕНИЕ РАСШИРЕНИЯ
+     * ============================================================
+     *
+     * Это значение используется только для сравнения.
+     * На определение формата оно НЕ влияет.
+     */
+
+    function getExtension(filename) {
+
+        const lastDot = filename.lastIndexOf(".");
+
+        if (
+            lastDot === -1 ||
+            lastDot === filename.length - 1
+        ) {
+            return "";
+        }
+
+        return filename
+            .slice(lastDot + 1)
+            .toLowerCase();
+    }
+
+
+    /*
+     * ============================================================
+     *  ФОРМАТИРОВАНИЕ РАЗМЕРА
+     * ============================================================
+     */
+
+    function formatBytes(bytes) {
+
+        if (bytes === 0) {
+            return "0 B";
+        }
+
+        const units = [
+            "B",
+            "KB",
+            "MB",
+            "GB",
+            "TB"
+        ];
+
+        const index =
+            Math.floor(
+                Math.log(bytes) / Math.log(1024)
+            );
+
+        const value =
+            bytes / Math.pow(1024, index);
+
+        return (
+            value.toFixed(index === 0 ? 0 : 2) +
+            " " +
+            units[index]
+        );
+    }
+
+</script>
+
+</body>
+</html>

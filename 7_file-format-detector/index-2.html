@@ -1,0 +1,2687 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>File Format Detector</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            background: #101010;
+            color: #eeeeee;
+
+            font-family: Arial, sans-serif;
+        }
+
+        .app {
+            width: min(760px, 94vw);
+            padding: 30px 0;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+
+            text-align: center;
+            font-size: 28px;
+        }
+
+        .description {
+            margin-bottom: 25px;
+
+            text-align: center;
+            color: #888;
+
+            line-height: 1.5;
+        }
+
+        .drop-zone {
+            min-height: 220px;
+
+            border: 2px dashed #505050;
+            border-radius: 16px;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            text-align: center;
+
+            cursor: pointer;
+
+            transition:
+                border-color 0.2s,
+                background 0.2s;
+        }
+
+        .drop-zone:hover {
+            border-color: #888;
+            background: #181818;
+        }
+
+        .drop-zone.dragover {
+            border-color: #ffffff;
+            background: #202020;
+        }
+
+        .drop-text {
+            color: #999;
+            line-height: 1.7;
+        }
+
+        .drop-text strong {
+            display: block;
+
+            color: #ffffff;
+
+            font-size: 19px;
+            margin-bottom: 5px;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .result {
+            display: none;
+
+            margin-top: 20px;
+            padding: 20px;
+
+            background: #181818;
+
+            border: 1px solid #303030;
+            border-radius: 14px;
+        }
+
+        .result.visible {
+            display: block;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 190px 1fr;
+
+            gap: 15px;
+
+            padding: 11px 0;
+
+            border-bottom: 1px solid #292929;
+        }
+
+        .row:last-child {
+            border-bottom: none;
+        }
+
+        .label {
+            color: #777;
+        }
+
+        .value {
+            color: #ffffff;
+
+            word-break: break-word;
+        }
+
+        .format {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .unknown {
+            color: #ffb347;
+        }
+
+        .verified {
+            color: #8fd694;
+        }
+
+        .warning {
+            color: #ffb347;
+        }
+
+        .details {
+            margin-top: 18px;
+            padding-top: 15px;
+
+            border-top: 1px solid #303030;
+
+            color: #999;
+            line-height: 1.5;
+        }
+
+        @media (max-width: 600px) {
+
+            .row {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <h1>File Format Detector</h1>
+
+    <div class="description">
+        Формат определяется по содержимому файла.
+        Расширение файла не используется для определения.
+    </div>
+
+
+    <!--
+        Область Drag & Drop
+    -->
+
+    <div class="drop-zone" id="dropZone">
+
+        <div class="drop-text">
+
+            <strong>Перетащи файл сюда</strong>
+
+            или нажми, чтобы выбрать файл
+
+        </div>
+
+        <input
+            type="file"
+            id="fileInput"
+        >
+
+    </div>
+
+
+    <!--
+        Результат определения
+    -->
+
+    <div class="result" id="result">
+
+        <div class="row">
+            <div class="label">Имя файла</div>
+            <div class="value" id="fileName"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Размер</div>
+            <div class="value" id="fileSize"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Реальный формат</div>
+            <div class="value format" id="fileFormat"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">MIME-тип</div>
+            <div class="value" id="mimeType"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Расширение</div>
+            <div class="value" id="extension"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Сигнатура</div>
+            <div class="value" id="signature"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Проверка</div>
+            <div class="value" id="verification"></div>
+        </div>
+
+        <div class="row">
+            <div class="label">Метод</div>
+            <div class="value" id="method"></div>
+        </div>
+
+        <div class="details" id="details"></div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+/*
+====================================================================
+                    FILE FORMAT DETECTOR
+====================================================================
+
+ВАЖНО:
+
+Расширение файла НЕ используется для определения формата.
+
+Например:
+
+    photo.jpg
+
+может на самом деле быть:
+
+    PNG
+    ZIP
+    EXE
+    PDF
+    вообще чем угодно
+
+Поэтому сначала читаются реальные байты файла.
+
+Поддерживаются:
+
+    - сигнатуры в начале файла
+    - сигнатуры на конкретном смещении
+    - сигнатуры в диапазоне
+    - RIFF-типы
+    - ISO 9660
+    - UDF
+    - TAR
+    - PE
+    - ELF
+    - Mach-O
+    - MP4 / MOV
+    - ZIP
+    - RAR
+    - 7z
+    - изображения
+    - аудио
+    - видео
+    - документы
+    - архивы
+    - базы данных
+    - шрифты
+    - и многие другие
+
+Если формат невозможно подтвердить —
+он НЕ угадывается.
+
+====================================================================
+*/
+
+
+/*
+====================================================================
+                         DOM
+====================================================================
+*/
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+
+const result = document.getElementById("result");
+
+const fileName = document.getElementById("fileName");
+const fileSize = document.getElementById("fileSize");
+
+const fileFormat = document.getElementById("fileFormat");
+const mimeType = document.getElementById("mimeType");
+
+const extension = document.getElementById("extension");
+
+const signature = document.getElementById("signature");
+
+const verification = document.getElementById("verification");
+const method = document.getElementById("method");
+
+const details = document.getElementById("details");
+
+
+/*
+====================================================================
+                    DRAG & DROP
+====================================================================
+*/
+
+dropZone.addEventListener("click", () => {
+    fileInput.click();
+});
+
+
+fileInput.addEventListener("change", () => {
+
+    if (fileInput.files.length > 0) {
+        analyzeFile(fileInput.files[0]);
+    }
+
+});
+
+
+dropZone.addEventListener("dragover", event => {
+
+    event.preventDefault();
+
+    dropZone.classList.add("dragover");
+
+});
+
+
+dropZone.addEventListener("dragleave", () => {
+
+    dropZone.classList.remove("dragover");
+
+});
+
+
+dropZone.addEventListener("drop", event => {
+
+    event.preventDefault();
+
+    dropZone.classList.remove("dragover");
+
+    if (event.dataTransfer.files.length > 0) {
+        analyzeFile(event.dataTransfer.files[0]);
+    }
+
+});
+
+
+/*
+====================================================================
+                    ЧТЕНИЕ ФАЙЛА
+====================================================================
+
+Мы не читаем весь файл в память.
+
+Это важно для огромных файлов.
+
+Например:
+
+    31 GB ISO
+
+не должен полностью загружаться в RAM.
+
+Вместо этого читаются необходимые участки.
+*/
+
+async function readRange(file, start, length) {
+
+    const end = Math.min(
+        start + length,
+        file.size
+    );
+
+    if (start >= file.size) {
+        return new Uint8Array();
+    }
+
+    const buffer = await file
+        .slice(start, end)
+        .arrayBuffer();
+
+    return new Uint8Array(buffer);
+}
+
+
+/*
+====================================================================
+                    ОСНОВНАЯ ФУНКЦИЯ
+====================================================================
+*/
+
+async function analyzeFile(file) {
+
+    result.classList.remove("visible");
+
+    /*
+     * Читаем первые 512 байт.
+     *
+     * Этого хватает для огромного количества
+     * обычных сигнатур.
+     */
+    const firstBytes = await readRange(
+        file,
+        0,
+        512
+    );
+
+
+    /*
+     * Получаем первые 64 байта
+     * для отображения.
+     */
+    const visibleSignature =
+        firstBytes.slice(0, 64);
+
+
+    /*
+     * Запускаем детектор.
+     */
+    const detected =
+        await detectFormat(
+            file,
+            firstBytes
+        );
+
+
+    /*
+     * Заполняем интерфейс.
+     */
+
+    fileName.textContent =
+        file.name;
+
+    fileSize.textContent =
+        formatBytes(file.size);
+
+    fileFormat.textContent =
+        detected.format;
+
+    mimeType.textContent =
+        detected.mime;
+
+    extension.textContent =
+        getExtension(file.name)
+            ? "." + getExtension(file.name)
+            : "нет";
+
+    signature.textContent =
+        bytesToHex(visibleSignature);
+
+    verification.textContent =
+        detected.verification;
+
+    method.textContent =
+        detected.method;
+
+    details.textContent =
+        detected.details;
+
+
+    /*
+     * Цвет формата.
+     */
+
+    fileFormat.classList.remove(
+        "unknown",
+        "verified"
+    );
+
+    verification.classList.remove(
+        "warning",
+        "verified"
+    );
+
+
+    if (detected.known) {
+
+        fileFormat.classList.add(
+            "verified"
+        );
+
+        verification.classList.add(
+            "verified"
+        );
+
+    } else {
+
+        fileFormat.classList.add(
+            "unknown"
+        );
+
+        verification.classList.add(
+            "warning"
+        );
+
+    }
+
+
+    result.classList.add("visible");
+}
+
+
+/*
+====================================================================
+                 ГЛАВНЫЙ ДЕТЕКТОР
+====================================================================
+*/
+
+async function detectFormat(file, first) {
+
+
+    /*
+    ================================================================
+                         ИЗОБРАЖЕНИЯ
+    ================================================================
+    */
+
+
+    /*
+     * JPEG
+     *
+     * FF D8 FF
+     */
+
+    if (match(first, [
+        0xFF,
+        0xD8,
+        0xFF
+    ])) {
+
+        return resultOf(
+            "JPEG",
+            "image/jpeg",
+            "Magic bytes: FF D8 FF",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * PNG
+     */
+
+    if (match(first, [
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A
+    ])) {
+
+        return resultOf(
+            "PNG",
+            "image/png",
+            "PNG signature",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * GIF
+     */
+
+    if (
+        ascii(first, 0, "GIF87a") ||
+        ascii(first, 0, "GIF89a")
+    ) {
+
+        return resultOf(
+            "GIF",
+            "image/gif",
+            "GIF87a / GIF89a",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * BMP
+     */
+
+    if (ascii(first, 0, "BM")) {
+
+        return resultOf(
+            "BMP",
+            "image/bmp",
+            "BM",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * WEBP
+     *
+     * RIFF .... WEBP
+     */
+
+    if (
+        ascii(first, 0, "RIFF") &&
+        ascii(first, 8, "WEBP")
+    ) {
+
+        return resultOf(
+            "WebP",
+            "image/webp",
+            "RIFF + WEBP",
+            "Структура RIFF"
+        );
+
+    }
+
+
+    /*
+     * TIFF
+     *
+     * II 2A 00
+     * MM 00 2A
+     */
+
+    if (
+        match(first, [
+            0x49,
+            0x49,
+            0x2A,
+            0x00
+        ]) ||
+        match(first, [
+            0x4D,
+            0x4D,
+            0x00,
+            0x2A
+        ])
+    ) {
+
+        return resultOf(
+            "TIFF",
+            "image/tiff",
+            "TIFF header",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * JPEG 2000
+     */
+
+    if (
+        match(first, [
+            0x00,
+            0x00,
+            0x00,
+            0x0C,
+            0x6A,
+            0x50,
+            0x20,
+            0x20,
+            0x0D,
+            0x0A,
+            0x87,
+            0x0A
+        ])
+    ) {
+
+        return resultOf(
+            "JPEG 2000",
+            "image/jp2",
+            "JP2 signature",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * ICO
+     */
+
+    if (
+        match(first, [
+            0x00,
+            0x00,
+            0x01,
+            0x00
+        ])
+    ) {
+
+        return resultOf(
+            "ICO",
+            "image/x-icon",
+            "00 00 01 00",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * PSD
+     */
+
+    if (ascii(first, 0, "8BPS")) {
+
+        return resultOf(
+            "Adobe Photoshop PSD",
+            "image/vnd.adobe.photoshop",
+            "8BPS",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * PSD / PSB
+     *
+     * PSB использует тот же magic.
+     */
+
+    /*
+    ================================================================
+                           ДОКУМЕНТЫ
+    ================================================================
+    */
+
+
+    /*
+     * PDF
+     */
+
+    if (ascii(first, 0, "%PDF")) {
+
+        return resultOf(
+            "PDF",
+            "application/pdf",
+            "%PDF",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * PostScript
+     */
+
+    if (ascii(first, 0, "%!PS")) {
+
+        return resultOf(
+            "PostScript",
+            "application/postscript",
+            "%!PS",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * RTF
+     */
+
+    if (ascii(first, 0, "{\\rtf")) {
+
+        return resultOf(
+            "Rich Text Format",
+            "application/rtf",
+            "{\\rtf",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * Microsoft Compound File
+     *
+     * Старые DOC/XLS/PPT и некоторые другие форматы.
+     */
+
+    if (
+        match(first, [
+            0xD0,
+            0xCF,
+            0x11,
+            0xE0,
+            0xA1,
+            0xB1,
+            0x1A,
+            0xE1
+        ])
+    ) {
+
+        return resultOf(
+            "OLE Compound File",
+            "application/x-ole-storage",
+            "D0 CF 11 E0 A1 B1 1A E1",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                           АРХИВЫ
+    ================================================================
+    */
+
+
+    /*
+     * ZIP
+     *
+     * Несколько валидных сигнатур.
+     */
+
+    if (
+        match(first, [
+            0x50,
+            0x4B,
+            0x03,
+            0x04
+        ]) ||
+
+        match(first, [
+            0x50,
+            0x4B,
+            0x05,
+            0x06
+        ]) ||
+
+        match(first, [
+            0x50,
+            0x4B,
+            0x07,
+            0x08
+        ])
+    ) {
+
+        return resultOf(
+            "ZIP",
+            "application/zip",
+            "PK ZIP signature",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * RAR 4
+     */
+
+    if (
+        match(first, [
+            0x52,
+            0x61,
+            0x72,
+            0x21,
+            0x1A,
+            0x07,
+            0x00
+        ])
+    ) {
+
+        return resultOf(
+            "RAR 4.x",
+            "application/vnd.rar",
+            "Rar! signature",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * RAR 5
+     */
+
+    if (
+        match(first, [
+            0x52,
+            0x61,
+            0x72,
+            0x21,
+            0x1A,
+            0x07,
+            0x01,
+            0x00
+        ])
+    ) {
+
+        return resultOf(
+            "RAR 5.x",
+            "application/vnd.rar",
+            "Rar! 5 signature",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * 7-Zip
+     */
+
+    if (
+        match(first, [
+            0x37,
+            0x7A,
+            0xBC,
+            0xAF,
+            0x27,
+            0x1C
+        ])
+    ) {
+
+        return resultOf(
+            "7-Zip",
+            "application/x-7z-compressed",
+            "37 7A BC AF 27 1C",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * GZIP
+     */
+
+    if (
+        match(first, [
+            0x1F,
+            0x8B
+        ])
+    ) {
+
+        return resultOf(
+            "GZIP",
+            "application/gzip",
+            "1F 8B",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * BZIP2
+     */
+
+    if (ascii(first, 0, "BZh")) {
+
+        return resultOf(
+            "BZIP2",
+            "application/x-bzip2",
+            "BZh",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * XZ
+     */
+
+    if (
+        match(first, [
+            0xFD,
+            0x37,
+            0x7A,
+            0x58,
+            0x5A,
+            0x00
+        ])
+    ) {
+
+        return resultOf(
+            "XZ",
+            "application/x-xz",
+            "FD 37 7A 58 5A 00",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * Zstandard
+     */
+
+    if (
+        match(first, [
+            0x28,
+            0xB5,
+            0x2F,
+            0xFD
+        ])
+    ) {
+
+        return resultOf(
+            "Zstandard",
+            "application/zstd",
+            "28 B5 2F FD",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                         АУДИО
+    ================================================================
+    */
+
+
+    /*
+     * MP3 с ID3
+     */
+
+    if (ascii(first, 0, "ID3")) {
+
+        return resultOf(
+            "MP3",
+            "audio/mpeg",
+            "ID3",
+            "ID3 header"
+        );
+
+    }
+
+
+    /*
+     * MP3 MPEG frame.
+     */
+
+    if (
+        first.length >= 2 &&
+        first[0] === 0xFF &&
+        (
+            first[1] === 0xFB ||
+            first[1] === 0xF3 ||
+            first[1] === 0xF2
+        )
+    ) {
+
+        return resultOf(
+            "MP3",
+            "audio/mpeg",
+            "MPEG audio frame sync",
+            "Структура MPEG frame"
+        );
+
+    }
+
+
+    /*
+     * FLAC
+     */
+
+    if (ascii(first, 0, "fLaC")) {
+
+        return resultOf(
+            "FLAC",
+            "audio/flac",
+            "fLaC",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * OGG
+     */
+
+    if (ascii(first, 0, "OggS")) {
+
+        return resultOf(
+            "OGG",
+            "audio/ogg",
+            "OggS",
+            "Начальная сигнатура"
+        );
+
+    }
+
+
+    /*
+     * AIFF
+     */
+
+    if (
+        ascii(first, 0, "FORM") &&
+        ascii(first, 8, "AIFF")
+    ) {
+
+        return resultOf(
+            "AIFF",
+            "audio/aiff",
+            "FORM + AIFF",
+            "Структура IFF"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                         VIDEO
+    ================================================================
+    */
+
+
+    /*
+     * WAV
+     */
+
+    if (
+        ascii(first, 0, "RIFF") &&
+        ascii(first, 8, "WAVE")
+    ) {
+
+        return resultOf(
+            "WAV",
+            "audio/wav",
+            "RIFF + WAVE",
+            "Структура RIFF"
+        );
+
+    }
+
+
+    /*
+     * AVI
+     */
+
+    if (
+        ascii(first, 0, "RIFF") &&
+        ascii(first, 8, "AVI ")
+    ) {
+
+        return resultOf(
+            "AVI",
+            "video/x-msvideo",
+            "RIFF + AVI",
+            "Структура RIFF"
+        );
+
+    }
+
+
+    /*
+     * WebM / Matroska
+     */
+
+    if (
+        match(first, [
+            0x1A,
+            0x45,
+            0xDF,
+            0xA3
+        ])
+    ) {
+
+        return resultOf(
+            "Matroska / WebM",
+            "video/webm",
+            "EBML header",
+            "EBML structure"
+        );
+
+    }
+
+
+    /*
+     * MPEG transport stream
+     *
+     * TS часто начинается с 47.
+     *
+     * Но одного байта 47 недостаточно.
+     *
+     * Проверяем повторение sync byte через 188 байт.
+     */
+
+    if (
+        first.length >= 376 &&
+        first[0] === 0x47 &&
+        first[188] === 0x47
+    ) {
+
+        return resultOf(
+            "MPEG Transport Stream",
+            "video/mp2t",
+            "47 ... 47 через 188 байт",
+            "Структура MPEG-TS"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                      MP4 / MOV / ISO BMFF
+    ================================================================
+    */
+
+
+    if (
+        first.length >= 12 &&
+        ascii(first, 4, "ftyp")
+    ) {
+
+        const brand =
+            asciiString(first, 8, 4);
+
+
+        if (
+            brand === "isom" ||
+            brand === "iso2" ||
+            brand === "mp41" ||
+            brand === "mp42" ||
+            brand === "avc1" ||
+            brand === "dash"
+        ) {
+
+            return resultOf(
+                "MP4",
+                "video/mp4",
+                "ftyp " + brand,
+                "ISO Base Media structure"
+            );
+
+        }
+
+
+        if (brand === "qt  ") {
+
+            return resultOf(
+                "QuickTime MOV",
+                "video/quicktime",
+                "ftyp qt",
+                "ISO Base Media structure"
+            );
+
+        }
+
+
+        if (brand === "M4V ") {
+
+            return resultOf(
+                "M4V",
+                "video/x-m4v",
+                "ftyp M4V",
+                "ISO Base Media structure"
+            );
+
+        }
+
+
+        /*
+         * Не называем неизвестный ftyp MP4.
+         *
+         * Это важно:
+         * неизвестный brand ≠ автоматически MP4.
+         */
+
+        return resultOf(
+            "ISO Base Media File",
+            "application/octet-stream",
+            "ftyp " + brand,
+            "ISO Base Media structure"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                    WINDOWS PE: EXE / DLL / SYS
+    ================================================================
+    */
+
+    /*
+     * Проверяем MZ.
+     *
+     * Но MZ само по себе недостаточно.
+     *
+     * Поэтому читаем PE header по адресу,
+     * указанному в DOS header.
+     */
+
+    if (
+        first.length >= 64 &&
+        ascii(first, 0, "MZ")
+    ) {
+
+        /*
+         * e_lfanew находится по offset 0x3C.
+         */
+        const peOffset =
+            readUInt32LE(first, 0x3C);
+
+
+        if (
+            peOffset !== null &&
+            peOffset < file.size
+        ) {
+
+            const peHeader =
+                await readRange(
+                    file,
+                    peOffset,
+                    256
+                );
+
+
+            if (
+                ascii(peHeader, 0, "PE\0\0")
+            ) {
+
+                /*
+                 * Machine field находится после PE signature.
+                 */
+
+                const machine =
+                    readUInt16LE(
+                        peHeader,
+                        4
+                    );
+
+
+                /*
+                 * Определяем тип PE
+                 * по Optional Header.
+                 */
+
+                const optionalMagic =
+                    readUInt16LE(
+                        peHeader,
+                        24
+                    );
+
+
+                let peType =
+                    "Windows PE";
+
+
+                if (
+                    optionalMagic === 0x10B
+                ) {
+                    peType =
+                        "Windows PE 32-bit";
+                }
+
+                else if (
+                    optionalMagic === 0x20B
+                ) {
+                    peType =
+                        "Windows PE 64-bit";
+                }
+
+
+                return resultOf(
+                    peType,
+                    "application/vnd.microsoft.portable-executable",
+                    "MZ + PE\\0\\0",
+                    "PE структура",
+                    "Machine: 0x" +
+                    machine.toString(16).toUpperCase()
+                );
+
+            }
+
+        }
+
+
+        /*
+         * MZ есть, но PE не подтверждён.
+         *
+         * НЕ называем файл EXE.
+         */
+
+        return unknownResult(
+            "MZ обнаружен, но PE-заголовок не подтверждён.",
+            "Частичная сигнатура"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                              ELF
+    ================================================================
+    */
+
+    if (
+        match(first, [
+            0x7F,
+            0x45,
+            0x4C,
+            0x46
+        ])
+    ) {
+
+        const elfClass =
+            first.length > 4
+                ? first[4]
+                : null;
+
+
+        let architecture =
+            "ELF";
+
+
+        if (elfClass === 1) {
+            architecture = "ELF 32-bit";
+        }
+
+        else if (elfClass === 2) {
+            architecture = "ELF 64-bit";
+        }
+
+
+        return resultOf(
+            architecture,
+            "application/x-elf",
+            "7F ELF",
+            "ELF header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                           MACH-O
+    ================================================================
+    */
+
+    /*
+     * 32-bit little endian
+     */
+
+    if (
+        match(first, [
+            0xCE,
+            0xFA,
+            0xED,
+            0xFE
+        ])
+    ) {
+
+        return resultOf(
+            "Mach-O 32-bit",
+            "application/x-mach-binary",
+            "CE FA ED FE",
+            "Mach-O header"
+        );
+
+    }
+
+
+    /*
+     * 64-bit little endian
+     */
+
+    if (
+        match(first, [
+            0xCF,
+            0xFA,
+            0xED,
+            0xFE
+        ])
+    ) {
+
+        return resultOf(
+            "Mach-O 64-bit",
+            "application/x-mach-binary",
+            "CF FA ED FE",
+            "Mach-O header"
+        );
+
+    }
+
+
+    /*
+     * FAT binary
+     */
+
+    if (
+        match(first, [
+            0xCA,
+            0xFE,
+            0xBA,
+            0xBE
+        ]) ||
+        match(first, [
+            0xBE,
+            0xBA,
+            0xFE,
+            0xCA
+        ])
+    ) {
+
+        return resultOf(
+            "Mach-O Universal / FAT",
+            "application/x-mach-binary",
+            "FAT Mach-O",
+            "Mach-O FAT header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                        ШРИФТЫ
+    ================================================================
+    */
+
+
+    /*
+     * TrueType
+     */
+
+    if (
+        ascii(first, 0, "true") ||
+        match(first, [
+            0x00,
+            0x01,
+            0x00,
+            0x00
+        ])
+    ) {
+
+        return resultOf(
+            "TrueType Font",
+            "font/ttf",
+            "TrueType sfnt header",
+            "Font structure"
+        );
+
+    }
+
+
+    /*
+     * OpenType
+     */
+
+    if (ascii(first, 0, "OTTO")) {
+
+        return resultOf(
+            "OpenType Font",
+            "font/otf",
+            "OTTO",
+            "Font structure"
+        );
+
+    }
+
+
+    /*
+     * WOFF
+     */
+
+    if (ascii(first, 0, "wOFF")) {
+
+        return resultOf(
+            "WOFF Font",
+            "font/woff",
+            "wOFF",
+            "Font structure"
+        );
+
+    }
+
+
+    /*
+     * WOFF2
+     */
+
+    if (ascii(first, 0, "wOF2")) {
+
+        return resultOf(
+            "WOFF2 Font",
+            "font/woff2",
+            "wOF2",
+            "Font structure"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                     ФАЙЛОВЫЕ СИСТЕМЫ / ДИСКИ
+    ================================================================
+    */
+
+
+    /*
+     * ============================================================
+     * ISO 9660
+     * ============================================================
+     *
+     * Очень важный момент:
+     *
+     * ISO 9660 Primary Volume Descriptor
+     * начинается с sector 16.
+     *
+     * При стандартном размере сектора 2048:
+     *
+     * 16 * 2048 = 32768
+     *
+     * Внутри descriptor:
+     *
+     * byte 0  = 01
+     * bytes 1-5 = "CD001"
+     *
+     * Поэтому сигнатура находится не в начале файла.
+     */
+
+    const isoCandidates = [
+        32768,
+        32769,
+        65536,
+        65537
+    ];
+
+
+    for (const offset of isoCandidates) {
+
+        if (
+            offset + 6 <= file.size
+        ) {
+
+            const chunk =
+                await readRange(
+                    file,
+                    offset,
+                    16
+                );
+
+
+            /*
+             * Нормальный ISO:
+             *
+             * 01 CD001 01
+             */
+
+            if (
+                chunk.length >= 6 &&
+                chunk[0] === 0x01 &&
+                ascii(chunk, 1, "CD001")
+            ) {
+
+                return resultOf(
+                    "ISO 9660",
+                    "application/x-iso9660-image",
+                    "01 CD001 01",
+                    "ISO 9660 Primary Volume Descriptor",
+                    "Сигнатура найдена на смещении " +
+                    offset +
+                    " байт"
+                );
+
+            }
+
+        }
+
+    }
+
+
+    /*
+     * ISO 9660 supplementary descriptor
+     *
+     * Может встречаться descriptor type 2.
+     */
+
+    for (const offset of isoCandidates) {
+
+        if (
+            offset + 6 <= file.size
+        ) {
+
+            const chunk =
+                await readRange(
+                    file,
+                    offset,
+                    16
+                );
+
+
+            if (
+                chunk.length >= 6 &&
+                chunk[0] === 0x02 &&
+                ascii(chunk, 1, "CD001")
+            ) {
+
+                return resultOf(
+                    "ISO 9660",
+                    "application/x-iso9660-image",
+                    "02 CD001",
+                    "ISO 9660 Supplementary Volume Descriptor",
+                    "Сигнатура найдена на смещении " +
+                    offset +
+                    " байт"
+                );
+
+            }
+
+        }
+
+    }
+
+
+    /*
+     * ============================================================
+     * UDF
+     * ============================================================
+     *
+     * UDF использует Volume Recognition Sequence.
+     *
+     * Один из полезных маркеров:
+     *
+     * BEA01
+     *
+     * NSR02
+     * NSR03
+     *
+     * TEA01
+     *
+     * Они находятся в области начала UDF VRS.
+     */
+
+    const udfOffsets = [
+        32768,
+        32769,
+        34816,
+        36864,
+        38912,
+        40960
+    ];
+
+
+    for (const offset of udfOffsets) {
+
+        if (offset >= file.size) {
+            continue;
+        }
+
+        const chunk =
+            await readRange(
+                file,
+                offset,
+                4096
+            );
+
+
+        if (
+            containsASCII(chunk, "BEA01") &&
+            (
+                containsASCII(chunk, "NSR02") ||
+                containsASCII(chunk, "NSR03")
+            )
+        ) {
+
+            return resultOf(
+                "UDF Disc Image",
+                "application/x-udf",
+                "BEA01 + NSR02/NSR03",
+                "UDF Volume Recognition Sequence",
+                "UDF VRS обнаружен"
+            );
+
+        }
+
+    }
+
+
+    /*
+    ================================================================
+                              TAR
+    ================================================================
+    */
+
+    /*
+     * TAR имеет "ustar" примерно на offset 257.
+     */
+
+    if (file.size >= 512) {
+
+        const tarHeader =
+            await readRange(
+                file,
+                0,
+                512
+            );
+
+
+        if (
+            ascii(tarHeader, 257, "ustar")
+        ) {
+
+            return resultOf(
+                "TAR",
+                "application/x-tar",
+                "ustar",
+                "POSIX TAR header"
+            );
+
+        }
+
+    }
+
+
+    /*
+    ================================================================
+                       ANDROID APK / JAR / EPUB
+    ================================================================
+    */
+
+    /*
+     * APK, JAR, DOCX, XLSX, PPTX и многие другие
+     * технически являются ZIP-контейнерами.
+     *
+     * Поэтому после ZIP signature можно дополнительно
+     * анализировать внутренние записи.
+     *
+     * Сейчас это делаем отдельно ниже.
+     */
+
+    if (
+        isZipSignature(first)
+    ) {
+
+        const zipInfo =
+            await inspectZipContainer(file);
+
+
+        if (zipInfo) {
+
+            return zipInfo;
+
+        }
+
+    }
+
+
+    /*
+    ================================================================
+                      SQLITE DATABASE
+    ================================================================
+    */
+
+    if (
+        ascii(first, 0, "SQLite format 3\0")
+    ) {
+
+        return resultOf(
+            "SQLite Database",
+            "application/vnd.sqlite3",
+            "SQLite format 3",
+            "SQLite header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                       RIFF OTHER
+    ================================================================
+    */
+
+    if (ascii(first, 0, "RIFF")) {
+
+        /*
+         * Если это RIFF, но конкретный тип неизвестен,
+         * не превращаем его в какой-либо случайный формат.
+         */
+
+        return resultOf(
+            "RIFF container",
+            "application/octet-stream",
+            "RIFF",
+            "RIFF container",
+            "Тип RIFF-подформата не определён"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                      CPIO
+    ================================================================
+    */
+
+    if (
+        ascii(first, 0, "070701") ||
+        ascii(first, 0, "070702") ||
+        ascii(first, 0, "070707")
+    ) {
+
+        return resultOf(
+            "CPIO",
+            "application/x-cpio",
+            "CPIO magic",
+            "CPIO header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                         CAB
+    ================================================================
+    */
+
+    if (ascii(first, 0, "MSCF")) {
+
+        return resultOf(
+            "Microsoft Cabinet",
+            "application/vnd.ms-cab-compressed",
+            "MSCF",
+            "CAB header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                          CHM
+    ================================================================
+    */
+
+    if (
+        match(first, [
+            0x49,
+            0x54,
+            0x53,
+            0x46
+        ])
+    ) {
+
+        return resultOf(
+            "Compiled HTML Help",
+            "application/vnd.ms-htmlhelp",
+            "ITSF",
+            "CHM header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                          SWF
+    ================================================================
+    */
+
+    if (
+        ascii(first, 0, "FWS") ||
+        ascii(first, 0, "CWS") ||
+        ascii(first, 0, "ZWS")
+    ) {
+
+        return resultOf(
+            "Adobe Flash SWF",
+            "application/x-shockwave-flash",
+            asciiString(first, 0, 3),
+            "SWF signature"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                          WASM
+    ================================================================
+    */
+
+    if (
+        match(first, [
+            0x00,
+            0x61,
+            0x73,
+            0x6D
+        ])
+    ) {
+
+        return resultOf(
+            "WebAssembly",
+            "application/wasm",
+            "00 61 73 6D",
+            "WASM header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                           PCAP
+    ================================================================
+    */
+
+    if (
+        match(first, [
+            0xD4,
+            0xC3,
+            0xB2,
+            0xA1
+        ]) ||
+        match(first, [
+            0xA1,
+            0xB2,
+            0xC3,
+            0xD4
+        ]) ||
+        match(first, [
+            0x4D,
+            0x3C,
+            0xB2,
+            0xA1
+        ]) ||
+        match(first, [
+            0xA1,
+            0xB2,
+            0x3C,
+            0x4D
+        ])
+    ) {
+
+        return resultOf(
+            "PCAP Capture",
+            "application/vnd.tcpdump.pcap",
+            "PCAP magic",
+            "PCAP header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                          FITS
+    ================================================================
+    */
+
+    if (
+        ascii(first, 0, "SIMPLE  =")
+    ) {
+
+        return resultOf(
+            "FITS",
+            "application/fits",
+            "SIMPLE  =",
+            "FITS header"
+        );
+
+    }
+
+
+    /*
+    ================================================================
+                       НЕИЗВЕСТНЫЙ
+    ================================================================
+    */
+
+    return unknownResult(
+        "Надёжная сигнатура известного формата не найдена.",
+        "Проверены известные сигнатуры и структурные признаки"
+    );
+}
+
+
+/*
+====================================================================
+                    ZIP CONTAINER ANALYSIS
+====================================================================
+
+ZIP является контейнером.
+
+Поэтому:
+
+    .zip
+    .jar
+    .apk
+    .epub
+    .docx
+    .xlsx
+    .pptx
+
+могут иметь одинаковую внешнюю сигнатуру PK.
+
+Чтобы не угадывать, смотрим на содержимое ZIP.
+====================================================================
+*/
+
+async function inspectZipContainer(file) {
+
+    /*
+     * Читаем начало ZIP.
+     *
+     * Этого обычно хватает для первого
+     * Local File Header.
+     */
+
+    const data =
+        await readRange(
+            file,
+            0,
+            Math.min(
+                1024 * 1024,
+                file.size
+            )
+        );
+
+
+    const text =
+        decodeLatin1(data);
+
+
+    /*
+     * EPUB
+     *
+     * Требует mimetype application/epub+zip
+     *
+     * Он обычно находится первой записью.
+     */
+
+    if (
+        text.includes("application/epub+zip")
+    ) {
+
+        return resultOf(
+            "EPUB",
+            "application/epub+zip",
+            "ZIP + application/epub+zip",
+            "ZIP container inspection"
+        );
+
+    }
+
+
+    /*
+     * JAR
+     */
+
+    if (
+        text.includes("META-INF/MANIFEST.MF")
+    ) {
+
+        return resultOf(
+            "Java Archive (JAR)",
+            "application/java-archive",
+            "ZIP + META-INF/MANIFEST.MF",
+            "ZIP container inspection"
+        );
+
+    }
+
+
+    /*
+     * APK
+     */
+
+    if (
+        text.includes("AndroidManifest.xml") ||
+        text.includes("classes.dex")
+    ) {
+
+        return resultOf(
+            "Android APK",
+            "application/vnd.android.package-archive",
+            "ZIP + Android package structure",
+            "ZIP container inspection"
+        );
+
+    }
+
+
+    /*
+     * DOCX
+     */
+
+    if (
+        text.includes("[Content_Types].xml") &&
+        text.includes("word/")
+    ) {
+
+        return resultOf(
+            "Microsoft Word DOCX",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "ZIP + word/",
+            "OOXML container inspection"
+        );
+
+    }
+
+
+    /*
+     * XLSX
+     */
+
+    if (
+        text.includes("[Content_Types].xml") &&
+        text.includes("xl/")
+    ) {
+
+        return resultOf(
+            "Microsoft Excel XLSX",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "ZIP + xl/",
+            "OOXML container inspection"
+        );
+
+    }
+
+
+    /*
+     * PPTX
+     */
+
+    if (
+        text.includes("[Content_Types].xml") &&
+        text.includes("ppt/")
+    ) {
+
+        return resultOf(
+            "Microsoft PowerPoint PPTX",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "ZIP + ppt/",
+            "OOXML container inspection"
+        );
+
+    }
+
+
+    /*
+     * Обычный ZIP.
+     */
+
+    return resultOf(
+        "ZIP",
+        "application/zip",
+        "PK ZIP signature",
+        "ZIP container"
+    );
+}
+
+
+/*
+====================================================================
+                       RESULT OBJECTS
+====================================================================
+*/
+
+function resultOf(
+    format,
+    mime,
+    signatureText,
+    methodText,
+    extraDetails = ""
+) {
+
+    return {
+
+        known: true,
+
+        format: format,
+
+        mime: mime,
+
+        verification: "Подтверждено",
+
+        method: methodText,
+
+        details:
+            signatureText +
+            (
+                extraDetails
+                    ? " — " + extraDetails
+                    : ""
+            )
+
+    };
+}
+
+
+function unknownResult(
+    detailsText,
+    methodText
+) {
+
+    return {
+
+        known: false,
+
+        format: "Неизвестный формат",
+
+        mime: "application/octet-stream",
+
+        verification: "Не подтверждено",
+
+        method: methodText,
+
+        details: detailsText
+
+    };
+}
+
+
+/*
+====================================================================
+                       BYTE FUNCTIONS
+====================================================================
+*/
+
+function match(data, signature) {
+
+    if (
+        data.length <
+        signature.length
+    ) {
+        return false;
+    }
+
+
+    for (
+        let i = 0;
+        i < signature.length;
+        i++
+    ) {
+
+        if (
+            data[i] !== signature[i]
+        ) {
+            return false;
+        }
+
+    }
+
+
+    return true;
+}
+
+
+function ascii(
+    data,
+    offset,
+    text
+) {
+
+    if (
+        offset + text.length >
+        data.length
+    ) {
+        return false;
+    }
+
+
+    for (
+        let i = 0;
+        i < text.length;
+        i++
+    ) {
+
+        if (
+            data[offset + i] !==
+            text.charCodeAt(i)
+        ) {
+            return false;
+        }
+
+    }
+
+
+    return true;
+}
+
+
+function asciiString(
+    data,
+    offset,
+    length
+) {
+
+    let result = "";
+
+    for (
+        let i = 0;
+        i < length;
+        i++
+    ) {
+
+        if (
+            offset + i >=
+            data.length
+        ) {
+            break;
+        }
+
+        result += String.fromCharCode(
+            data[offset + i]
+        );
+
+    }
+
+    return result;
+}
+
+
+function containsASCII(
+    data,
+    text
+) {
+
+    for (
+        let i = 0;
+        i <= data.length - text.length;
+        i++
+    ) {
+
+        if (
+            ascii(
+                data,
+                i,
+                text
+            )
+        ) {
+            return true;
+        }
+
+    }
+
+    return false;
+}
+
+
+function decodeLatin1(data) {
+
+    let result = "";
+
+    for (const byte of data) {
+        result += String.fromCharCode(byte);
+    }
+
+    return result;
+}
+
+
+function readUInt32LE(
+    data,
+    offset
+) {
+
+    if (
+        offset + 4 >
+        data.length
+    ) {
+        return null;
+    }
+
+
+    return (
+        data[offset] |
+        (data[offset + 1] << 8) |
+        (data[offset + 2] << 16) |
+        (data[offset + 3] << 24)
+    ) >>> 0;
+}
+
+
+function readUInt16LE(
+    data,
+    offset
+) {
+
+    if (
+        offset + 2 >
+        data.length
+    ) {
+        return null;
+    }
+
+
+    return (
+        data[offset] |
+        (data[offset + 1] << 8)
+    );
+}
+
+
+/*
+====================================================================
+                       ZIP SIGNATURE
+====================================================================
+*/
+
+function isZipSignature(data) {
+
+    return (
+        match(data, [
+            0x50,
+            0x4B,
+            0x03,
+            0x04
+        ]) ||
+
+        match(data, [
+            0x50,
+            0x4B,
+            0x05,
+            0x06
+        ]) ||
+
+        match(data, [
+            0x50,
+            0x4B,
+            0x07,
+            0x08
+        ])
+    );
+}
+
+
+/*
+====================================================================
+                       EXTENSION
+====================================================================
+*/
+
+function getExtension(filename) {
+
+    const dot =
+        filename.lastIndexOf(".");
+
+
+    if (
+        dot === -1 ||
+        dot === filename.length - 1
+    ) {
+        return "";
+    }
+
+
+    return filename
+        .slice(dot + 1)
+        .toLowerCase();
+}
+
+
+/*
+====================================================================
+                       HEX
+====================================================================
+*/
+
+function bytesToHex(bytes) {
+
+    return Array
+        .from(bytes)
+        .map(byte =>
+            byte
+                .toString(16)
+                .padStart(2, "0")
+                .toUpperCase()
+        )
+        .join(" ");
+}
+
+
+/*
+====================================================================
+                       FILE SIZE
+====================================================================
+*/
+
+function formatBytes(bytes) {
+
+    if (bytes === 0) {
+        return "0 B";
+    }
+
+
+    const units = [
+        "B",
+        "KB",
+        "MB",
+        "GB",
+        "TB",
+        "PB"
+    ];
+
+
+    const index =
+        Math.floor(
+            Math.log(bytes) /
+            Math.log(1024)
+        );
+
+
+    const value =
+        bytes /
+        Math.pow(1024, index);
+
+
+    return (
+        value.toFixed(
+            index === 0 ? 0 : 2
+        ) +
+        " " +
+        units[index]
+    );
+}
+
+</script>
+
+</body>
+</html>
