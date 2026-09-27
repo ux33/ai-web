@@ -1,0 +1,1783 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ROM ID Reader</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+    margin:0;
+    padding:40px 20px;
+    font-family:Arial,sans-serif;
+    background:#f4f4f4;
+    color:#222;
+}
+
+h1{
+    text-align:center;
+    margin:0 0 8px;
+}
+
+.subtitle{
+    text-align:center;
+    color:#777;
+    margin-bottom:30px;
+}
+
+#drop{
+    max-width:800px;
+    margin:auto;
+    padding:55px 20px;
+    border:3px dashed #999;
+    border-radius:15px;
+    background:#fff;
+    text-align:center;
+    font-size:20px;
+    cursor:pointer;
+}
+
+#drop.drag{
+    background:#eee;
+    border-color:#333;
+}
+
+#drop small{
+    display:block;
+    margin-top:12px;
+    color:#888;
+    font-size:14px;
+}
+
+#result{
+    max-width:1100px;
+    margin:35px auto;
+}
+
+.platform{
+    margin-bottom:28px;
+    background:#fff;
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+}
+
+.platform-title{
+    padding:14px 18px;
+    background:#eee;
+    font-size:20px;
+    font-weight:bold;
+}
+
+.item{
+    display:grid;
+    grid-template-columns:170px minmax(200px,1fr) 100px;
+    gap:15px;
+    padding:10px 18px;
+    border-top:1px solid #eee;
+    align-items:center;
+}
+
+.code{
+    font-family:monospace;
+    font-weight:bold;
+    font-size:17px;
+}
+
+.filename{
+    word-break:break-all;
+}
+
+.read{
+    text-align:right;
+    color:#888;
+    font-size:13px;
+}
+
+.notfound{
+    color:#999;
+}
+
+#error{
+    max-width:1100px;
+    margin:15px auto;
+    color:#b00;
+    font-size:13px;
+}
+
+#clear{
+    display:block;
+    margin:20px auto;
+    padding:9px 20px;
+    border:0;
+    border-radius:7px;
+    background:#ddd;
+    cursor:pointer;
+}
+
+#clear:hover{
+    background:#ccc;
+}
+
+@media(max-width:700px){
+    .item{
+        grid-template-columns:1fr;
+        gap:4px;
+    }
+
+    .read{
+        text-align:left;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<h1>ROM ID Reader</h1>
+
+<div class="subtitle">
+NDS · GBA · PSP · PS2 · 3DS · Switch
+</div>
+
+<p style="max-width: 700px; margin: 0 auto 2em auto;">
+Простой инструмент для определения идентификаторов игр (ID) прямо из ROM-файлов.<br>
+Этот инструмент определит Game ID и покажет результат с разбивкой по платформам.
+</p>
+
+<div id="drop">
+    Перетащи сюда ROM-файлы
+    <small>
+        Можно сразу много файлов
+    </small>
+</div>
+
+<input
+    id="fileInput"
+    type="file"
+    multiple
+    accept=".nds,.gba,.iso,.cso,.3ds,.cci,.cia,.xci,.nsp"
+    hidden
+>
+
+<button id="clear">Очистить</button>
+
+<div id="error"></div>
+<div id="result"></div>
+
+
+<script>
+
+/* =========================================================
+   НАСТРОЙКИ
+========================================================= */
+
+const SECTOR = 2048;
+
+/*
+   Размер одного чтения директории.
+
+   Мы НЕ читаем весь ISO.
+*/
+const DIRECTORY_CHUNK = 32768;
+
+
+/* =========================================================
+   ГРУППЫ
+========================================================= */
+
+const groups = {
+    NDS: [],
+    GBA: [],
+    PSP: [],
+    PS2: [],
+    "3DS": [],
+    Switch: []
+};
+
+
+/* =========================================================
+   СЧЁТЧИК РЕАЛЬНО ЗАПРОШЕННЫХ БАЙТ
+========================================================= */
+
+let totalReadBytes = 0;
+
+
+/* =========================================================
+   ЧТЕНИЕ ФАЙЛА
+
+   ВАЖНО:
+   file.slice(offset, offset+length)
+
+   Мы не делаем:
+   file.arrayBuffer()
+
+   для всего файла.
+========================================================= */
+
+async function readBytes(file, offset, length){
+
+    if(offset >= file.size)
+        return new Uint8Array();
+
+    const end =
+        Math.min(
+            offset + length,
+            file.size
+        );
+
+    const blob =
+        file.slice(offset, end);
+
+    const bytes =
+        new Uint8Array(
+            await blob.arrayBuffer()
+        );
+
+    totalReadBytes += bytes.length;
+
+    return bytes;
+}
+
+
+/* =========================================================
+   ASCII
+========================================================= */
+
+function ascii(bytes, offset, length){
+
+    if(
+        offset < 0 ||
+        offset + length > bytes.length
+    ){
+        return null;
+    }
+
+    let result = "";
+
+    for(
+        let i = offset;
+        i < offset + length;
+        i++
+    ){
+
+        const c = bytes[i];
+
+        if(c < 32 || c > 126)
+            return null;
+
+        result += String.fromCharCode(c);
+    }
+
+    return result;
+}
+
+
+function asciiLoose(bytes){
+
+    let result = "";
+
+    for(const c of bytes){
+
+        if(c >= 32 && c <= 126)
+            result += String.fromCharCode(c);
+        else
+            result += " ";
+    }
+
+    return result;
+}
+
+
+/* =========================================================
+   LITTLE ENDIAN
+========================================================= */
+
+function u32le(bytes, offset){
+
+    if(offset + 4 > bytes.length)
+        return null;
+
+    return (
+        bytes[offset] |
+        (bytes[offset + 1] << 8) |
+        (bytes[offset + 2] << 16) |
+        (bytes[offset + 3] << 24)
+    ) >>> 0;
+}
+
+
+/* =========================================================
+   ISO9660 DIRECTORY RECORD
+========================================================= */
+
+function parseDirectoryRecord(bytes, offset){
+
+    if(offset >= bytes.length)
+        return null;
+
+    const length =
+        bytes[offset];
+
+    /*
+       0 = padding до конца сектора
+    */
+
+    if(length === 0)
+        return null;
+
+    if(length < 34)
+        return null;
+
+    if(offset + length > bytes.length)
+        return null;
+
+
+    const extent =
+        u32le(
+            bytes,
+            offset + 2
+        );
+
+    const size =
+        u32le(
+            bytes,
+            offset + 10
+        );
+
+    const flags =
+        bytes[offset + 25];
+
+    const nameLength =
+        bytes[offset + 32];
+
+
+    if(
+        33 + nameLength >
+        length
+    ){
+        return null;
+    }
+
+
+    let name = "";
+
+    for(
+        let i = 0;
+        i < nameLength;
+        i++
+    ){
+
+        name +=
+            String.fromCharCode(
+                bytes[
+                    offset + 33 + i
+                ]
+            );
+    }
+
+
+    return {
+        length,
+        extent,
+        size,
+        flags,
+        name
+    };
+}
+
+
+/* =========================================================
+   ISO PVD
+
+   Сектор 16.
+========================================================= */
+
+async function readPVD(file){
+
+    const bytes =
+        await readBytes(
+            file,
+            16 * SECTOR,
+            SECTOR
+        );
+
+    if(bytes.length < SECTOR)
+        return null;
+
+
+    /*
+       ISO9660:
+
+       byte 0 = type
+       byte 1-5 = CD001
+    */
+
+    if(
+        ascii(
+            bytes,
+            1,
+            5
+        ) !== "CD001"
+    ){
+        return null;
+    }
+
+
+    return bytes;
+}
+
+
+/* =========================================================
+   ROOT DIRECTORY
+========================================================= */
+
+function getRootDirectoryRecord(pvd){
+
+    /*
+       Root directory record
+       начинается с 156.
+    */
+
+    return parseDirectoryRecord(
+        pvd,
+        156
+    );
+}
+
+
+/* =========================================================
+   ПОИСК В ISO-ДИРЕКТОРИИ
+
+   Читаем кусками по 32 KB.
+
+   Как только нашли нужный файл —
+   прекращаем чтение.
+========================================================= */
+
+async function findInDirectory(
+    file,
+    extent,
+    size,
+    wanted
+){
+
+    const wantedUpper =
+        wanted.toUpperCase();
+
+
+    let position = 0;
+
+    /*
+       Небольшой overlap между кусками.
+    */
+
+    let carry =
+        new Uint8Array();
+
+
+    while(position < size){
+
+        const amount =
+            Math.min(
+                DIRECTORY_CHUNK,
+                size - position
+            );
+
+
+        const chunk =
+            await readBytes(
+                file,
+                extent * SECTOR + position,
+                amount
+            );
+
+
+        if(!chunk.length)
+            break;
+
+
+        /*
+           Склеиваем хвост предыдущего
+           куска с новым.
+        */
+
+        const combined =
+            new Uint8Array(
+                carry.length +
+                chunk.length
+            );
+
+
+        combined.set(carry,0);
+        combined.set(
+            chunk,
+            carry.length
+        );
+
+
+        let offset = 0;
+
+
+        while(
+            offset <
+            combined.length
+        ){
+
+            /*
+               Нулевой байт = padding.
+            */
+
+            if(combined[offset] === 0){
+
+                /*
+                   Переходим к следующему
+                   ISO-сектору.
+
+                   Но если это конец текущего
+                   буфера — просто выходим.
+                */
+
+                const sectorEnd =
+                    (
+                        Math.floor(
+                            offset / SECTOR
+                        ) + 1
+                    ) * SECTOR;
+
+
+                if(
+                    sectorEnd >
+                    combined.length
+                ){
+                    break;
+                }
+
+
+                offset = sectorEnd;
+
+                continue;
+            }
+
+
+            const record =
+                parseDirectoryRecord(
+                    combined,
+                    offset
+                );
+
+
+            if(!record){
+
+                offset++;
+                continue;
+            }
+
+
+            const name =
+                record.name
+                    .replace(/;1$/,"")
+                    .trim()
+                    .toUpperCase();
+
+
+            if(name === wantedUpper){
+
+                return record;
+            }
+
+
+            offset +=
+                record.length;
+        }
+
+
+        /*
+           Оставляем последний сектор
+           для случая, когда запись пересекла
+           границу chunk.
+        */
+
+        const keep =
+            Math.min(
+                SECTOR,
+                combined.length
+            );
+
+
+        carry =
+            combined.slice(
+                combined.length - keep
+            );
+
+
+        position += chunk.length;
+    }
+
+
+    return null;
+}
+
+
+/* =========================================================
+   НОРМАЛИЗАЦИЯ PSP ID
+========================================================= */
+
+function normalizePSPID(value){
+
+    if(!value)
+        return null;
+
+
+    value =
+        value
+            .replace(/\0/g,"")
+            .trim()
+            .toUpperCase();
+
+
+    /*
+       Возможные варианты:
+
+       ULUS-10288
+       ULUS10288
+       ULES-00902
+       UCES01245
+       UCJB-98302
+    */
+
+
+    let match =
+        value.match(
+            /\b(U[A-Z0-9]{3})-?([0-9]{5})\b/
+        );
+
+
+    if(!match)
+        return null;
+
+
+    return (
+        match[1] +
+        "-" +
+        match[2]
+    );
+}
+
+
+/* =========================================================
+   PSP: UMD_DATA.BIN
+========================================================= */
+
+/*
+   UMD_DATA.BIN находится в корне PSP UMD.
+
+   Это очень маленький файл.
+
+   Структура PSP действительно содержит
+   UMD_DATA.BIN в корневой директории.
+========================================================= */
+
+async function readPSPFromUMDData(
+    file,
+    root
+){
+
+    const record =
+        await findInDirectory(
+            file,
+            root.extent,
+            root.size,
+            "UMD_DATA.BIN"
+        );
+
+
+    if(!record)
+        return null;
+
+
+    /*
+       UMD_DATA.BIN обычно всего несколько
+       десятков байт.
+
+       На всякий случай читаем максимум 4096.
+    */
+
+    const bytes =
+        await readBytes(
+            file,
+            record.extent * SECTOR,
+            Math.min(
+                record.size,
+                4096
+            )
+        );
+
+
+    const text =
+        asciiLoose(bytes);
+
+
+    const id =
+        normalizePSPID(text);
+
+
+    if(!id)
+        return null;
+
+
+    return {
+        code:id,
+        source:"UMD_DATA.BIN"
+    };
+}
+
+
+/* =========================================================
+   PSP: PARAM.SFO
+========================================================= */
+
+function parseSFO(bytes){
+
+    /*
+       PARAM.SFO header:
+
+       00-03 = 00 50 53 46
+       04-07 = version
+       08-0B = key table offset
+       0C-0F = data table offset
+       10-13 = number of entries
+    */
+
+    if(bytes.length < 20)
+        return null;
+
+
+    if(
+        bytes[0] !== 0x00 ||
+        bytes[1] !== 0x50 ||
+        bytes[2] !== 0x53 ||
+        bytes[3] !== 0x46
+    ){
+        return null;
+    }
+
+
+    const keyTable =
+        u32le(bytes,8);
+
+    const dataTable =
+        u32le(bytes,12);
+
+    const count =
+        u32le(bytes,16);
+
+
+    if(
+        keyTable === null ||
+        dataTable === null ||
+        count === null
+    ){
+        return null;
+    }
+
+
+    for(
+        let i = 0;
+        i < count;
+        i++
+    ){
+
+        const entry =
+            20 + i * 16;
+
+
+        if(
+            entry + 16 >
+            bytes.length
+        ){
+            break;
+        }
+
+
+        const keyOffset =
+            bytes[entry] |
+            (bytes[entry + 1] << 8);
+
+
+        const dataLength =
+            u32le(
+                bytes,
+                entry + 4
+            );
+
+
+        const dataOffset =
+            u32le(
+                bytes,
+                entry + 12
+            );
+
+
+        const keyPosition =
+            keyTable +
+            keyOffset;
+
+
+        if(
+            keyPosition >=
+            bytes.length
+        ){
+            continue;
+        }
+
+
+        let key = "";
+
+
+        for(
+            let p = keyPosition;
+            p < bytes.length;
+            p++
+        ){
+
+            if(bytes[p] === 0)
+                break;
+
+            key +=
+                String.fromCharCode(
+                    bytes[p]
+                );
+        }
+
+
+        if(key !== "DISC_ID")
+            continue;
+
+
+        const dataPosition =
+            dataTable +
+            dataOffset;
+
+
+        if(
+            dataPosition < 0 ||
+            dataPosition >= bytes.length
+        ){
+            return null;
+        }
+
+
+        let value = "";
+
+
+        const end =
+            Math.min(
+                dataPosition +
+                dataLength,
+                bytes.length
+            );
+
+
+        for(
+            let p = dataPosition;
+            p < end;
+            p++
+        ){
+
+            if(bytes[p] === 0)
+                break;
+
+            value +=
+                String.fromCharCode(
+                    bytes[p]
+                );
+        }
+
+
+        return normalizePSPID(value);
+    }
+
+
+    return null;
+}
+
+
+/* =========================================================
+   PSP: PARAM.SFO FALLBACK
+========================================================= */
+
+async function readPSPFromSFO(
+    file,
+    pspGame
+){
+
+    const param =
+        await findInDirectory(
+            file,
+            pspGame.extent,
+            pspGame.size,
+            "PARAM.SFO"
+        );
+
+
+    if(!param)
+        return null;
+
+
+    /*
+       PARAM.SFO маленький.
+
+       Ограничиваем чтение 1 MB.
+    */
+
+    const amount =
+        Math.min(
+            param.size,
+            1024 * 1024
+        );
+
+
+    const bytes =
+        await readBytes(
+            file,
+            param.extent * SECTOR,
+            amount
+        );
+
+
+    const id =
+        parseSFO(bytes);
+
+
+    if(!id)
+        return null;
+
+
+    return {
+        code:id,
+        source:"PARAM.SFO"
+    };
+}
+
+
+/* =========================================================
+   PSP ISO
+
+   Порядок:
+
+   PVD
+    ↓
+   ROOT
+    ↓
+   UMD_DATA.BIN
+    ↓
+   если не нашли:
+    ↓
+   PSP_GAME
+    ↓
+   PARAM.SFO
+========================================================= */
+
+async function readPSP(file){
+
+    const pvd =
+        await readPVD(file);
+
+
+    if(!pvd)
+        return null;
+
+
+    const root =
+        getRootDirectoryRecord(pvd);
+
+
+    if(!root)
+        return null;
+
+
+    /*
+       Первый и самый быстрый вариант:
+       UMD_DATA.BIN.
+    */
+
+    const umd =
+        await readPSPFromUMDData(
+            file,
+            root
+        );
+
+
+    if(umd)
+        return umd;
+
+
+    /*
+       Если UMD_DATA.BIN отсутствует,
+       ищем PSP_GAME.
+    */
+
+    const pspGame =
+        await findInDirectory(
+            file,
+            root.extent,
+            root.size,
+            "PSP_GAME"
+        );
+
+
+    if(!pspGame)
+        return null;
+
+
+    /*
+       Затем PARAM.SFO.
+    */
+
+    return await readPSPFromSFO(
+        file,
+        pspGame
+    );
+}
+
+
+/* =========================================================
+   PS2
+========================================================= */
+
+async function readPS2(file){
+
+    const pvd =
+        await readPVD(file);
+
+
+    if(!pvd)
+        return null;
+
+
+    const root =
+        getRootDirectoryRecord(pvd);
+
+
+    if(!root)
+        return null;
+
+
+    /*
+       PS2 обычно содержит SYSTEM.CNF
+       в корне.
+    */
+
+    const system =
+        await findInDirectory(
+            file,
+            root.extent,
+            root.size,
+            "SYSTEM.CNF"
+        );
+
+
+    if(!system)
+        return null;
+
+
+    /*
+       SYSTEM.CNF очень маленький.
+    */
+
+    const bytes =
+        await readBytes(
+            file,
+            system.extent * SECTOR,
+            Math.min(
+                system.size,
+                65536
+            )
+        );
+
+
+    const text =
+        asciiLoose(bytes);
+
+
+    /*
+       Например:
+
+       BOOT2 = cdrom0:\SLUS_203.12;1
+
+       или
+
+       BOOT2 = cdrom0:\SLES_507.81;1
+    */
+
+    const match =
+        text.match(
+            /\bS[A-Z]{3}_[0-9]{3}\.[0-9]{2}\b/i
+        );
+
+
+    if(!match)
+        return null;
+
+
+    return {
+        code:
+            match[0].toUpperCase(),
+        source:"SYSTEM.CNF"
+    };
+}
+
+
+/* =========================================================
+   NDS
+========================================================= */
+
+async function readNDS(file){
+
+    /*
+       Game Code:
+       0x0C - 4 bytes
+    */
+
+    const bytes =
+        await readBytes(
+            file,
+            0x0C,
+            4
+        );
+
+
+    const code =
+        ascii(
+            bytes,
+            0,
+            4
+        );
+
+
+    if(
+        !code ||
+        !/^[A-Z0-9]{4}$/.test(code)
+    ){
+        return null;
+    }
+
+
+    return {
+        code,
+        source:"NDS header"
+    };
+}
+
+
+/* =========================================================
+   GBA
+========================================================= */
+
+async function readGBA(file){
+
+    /*
+       Game Code:
+       0xAC - 4 bytes
+    */
+
+    const bytes =
+        await readBytes(
+            file,
+            0xAC,
+            4
+        );
+
+
+    const code =
+        ascii(
+            bytes,
+            0,
+            4
+        );
+
+
+    if(
+        !code ||
+        !/^[A-Z0-9]{4}$/.test(code)
+    ){
+        return null;
+    }
+
+
+    return {
+        code,
+        source:"GBA header"
+    };
+}
+
+
+/* =========================================================
+   3DS
+========================================================= */
+
+async function read3DS(file){
+
+    /*
+       Пока читаем только начало образа.
+
+       Имя файла НЕ используется.
+    */
+
+    const bytes =
+        await readBytes(
+            file,
+            0,
+            Math.min(
+                file.size,
+                1024 * 1024
+            )
+        );
+
+
+    const text =
+        asciiLoose(bytes);
+
+
+    const match =
+        text.match(
+            /\bCTR-[A-Z0-9]-[A-Z0-9]{4,8}\b/
+        );
+
+
+    if(!match)
+        return null;
+
+
+    return {
+        code:
+            match[0].toUpperCase(),
+        source:"3DS header"
+    };
+}
+
+
+/* =========================================================
+   SWITCH
+========================================================= */
+
+async function readSwitch(file){
+
+    /*
+       Читаем только начало.
+    */
+
+    const bytes =
+        await readBytes(
+            file,
+            0,
+            Math.min(
+                file.size,
+                1024 * 1024
+            )
+        );
+
+
+    const text =
+        asciiLoose(bytes);
+
+
+    /*
+       Switch Title ID:
+
+       0100XXXXXXXXXXXX
+    */
+
+    const match =
+        text.match(
+            /\b0100[0-9A-F]{12}\b/i
+        );
+
+
+    if(!match)
+        return null;
+
+
+    return {
+        code:
+            match[0].toUpperCase(),
+        source:"Switch header"
+    };
+}
+
+
+/* =========================================================
+   CSO
+
+   CSO сжатый.
+
+   Обычный ISO parser напрямую применять
+   нельзя.
+
+   Поэтому здесь пока честно "Не найден",
+   а не ложный ID.
+========================================================= */
+
+async function readCSO(file){
+
+    const magic =
+        await readBytes(
+            file,
+            0,
+            4
+        );
+
+
+    if(
+        ascii(
+            magic,
+            0,
+            4
+        ) !== "CISO"
+    ){
+        return null;
+    }
+
+
+    return null;
+}
+
+
+/* =========================================================
+   ОБРАБОТКА ФАЙЛА
+========================================================= */
+
+async function processFile(file){
+
+    const extension =
+        file.name
+            .toLowerCase()
+            .split(".")
+            .pop();
+
+
+    let platform = null;
+    let result = null;
+
+
+    try{
+
+        /* NDS */
+
+        if(extension === "nds"){
+
+            platform = "NDS";
+
+            result =
+                await readNDS(file);
+        }
+
+
+        /* GBA */
+
+        else if(extension === "gba"){
+
+            platform = "GBA";
+
+            result =
+                await readGBA(file);
+        }
+
+
+        /* ISO */
+
+        else if(extension === "iso"){
+
+            /*
+               Сначала PSP.
+            */
+
+            result =
+                await readPSP(file);
+
+
+            if(result){
+
+                platform = "PSP";
+
+            }else{
+
+                /*
+                   Если это не PSP —
+                   пробуем PS2.
+                */
+
+                result =
+                    await readPS2(file);
+
+                platform = "PS2";
+            }
+        }
+
+
+        /* CSO */
+
+        else if(extension === "cso"){
+
+            platform = "PSP";
+
+            result =
+                await readCSO(file);
+        }
+
+
+        /* 3DS */
+
+        else if(
+            extension === "3ds" ||
+            extension === "cci" ||
+            extension === "cia"
+        ){
+
+            platform = "3DS";
+
+            result =
+                await read3DS(file);
+        }
+
+
+        /* Switch */
+
+        else if(
+            extension === "xci" ||
+            extension === "nsp"
+        ){
+
+            platform = "Switch";
+
+            result =
+                await readSwitch(file);
+        }
+
+
+        else{
+
+            return;
+        }
+
+
+        groups[platform].push({
+
+            code:
+                result
+                ? result.code
+                : "Не найден",
+
+            name:
+                file.name,
+
+            bytes:
+                totalReadBytes
+        });
+
+
+        render();
+
+
+    }catch(error){
+
+        console.error(
+            "Ошибка:",
+            file.name,
+            error
+        );
+
+
+        groups[platform].push({
+
+            code:"Ошибка",
+
+            name:file.name,
+
+            bytes:totalReadBytes
+        });
+
+
+        render();
+    }
+}
+
+
+/* =========================================================
+   ФОРМАТИРОВАНИЕ РАЗМЕРА
+========================================================= */
+
+function formatBytes(bytes){
+
+    if(bytes < 1024)
+        return bytes + " B";
+
+
+    if(bytes < 1024 * 1024){
+
+        return (
+            (bytes / 1024)
+                .toFixed(1)
+            + " KB"
+        );
+    }
+
+
+    return (
+        (bytes / 1024 / 1024)
+            .toFixed(2)
+        + " MB"
+    );
+}
+
+
+/* =========================================================
+   ОТОБРАЖЕНИЕ
+========================================================= */
+
+function render(){
+
+    result.innerHTML = "";
+
+
+    const order = [
+        "NDS",
+        "GBA",
+        "PSP",
+        "PS2",
+        "3DS",
+        "Switch"
+    ];
+
+
+    for(
+        const platform
+        of order
+    ){
+
+        const files =
+            groups[platform];
+
+
+        if(files.length === 0)
+            continue;
+
+
+        const section =
+            document.createElement(
+                "div"
+            );
+
+        section.className =
+            "platform";
+
+
+        const title =
+            document.createElement(
+                "div"
+            );
+
+        title.className =
+            "platform-title";
+
+        title.textContent =
+            platform +
+            " (" +
+            files.length +
+            ")";
+
+
+        section.appendChild(title);
+
+
+        for(
+            const itemData
+            of files
+        ){
+
+            const item =
+                document.createElement(
+                    "div"
+                );
+
+            item.className =
+                "item";
+
+
+            const code =
+                document.createElement(
+                    "div"
+                );
+
+            code.className =
+                "code";
+
+            code.textContent =
+                itemData.code;
+
+
+            if(
+                itemData.code ===
+                    "Не найден" ||
+                itemData.code ===
+                    "Ошибка"
+            ){
+
+                code.classList.add(
+                    "notfound"
+                );
+            }
+
+
+            const filename =
+                document.createElement(
+                    "div"
+                );
+
+            filename.className =
+                "filename";
+
+            filename.textContent =
+                itemData.name;
+
+
+            const read =
+                document.createElement(
+                    "div"
+                );
+
+            read.className =
+                "read";
+
+            read.textContent =
+                formatBytes(
+                    itemData.bytes
+                );
+
+
+            item.appendChild(code);
+            item.appendChild(filename);
+            item.appendChild(read);
+
+            section.appendChild(item);
+        }
+
+
+        result.appendChild(section);
+    }
+}
+
+
+/* =========================================================
+   DRAG & DROP
+========================================================= */
+
+drop.addEventListener(
+    "click",
+    () => {
+        fileInput.click();
+    }
+);
+
+
+drop.addEventListener(
+    "dragover",
+    event => {
+
+        event.preventDefault();
+
+        drop.classList.add("drag");
+    }
+);
+
+
+drop.addEventListener(
+    "dragleave",
+    () => {
+
+        drop.classList.remove("drag");
+    }
+);
+
+
+drop.addEventListener(
+    "drop",
+    event => {
+
+        event.preventDefault();
+
+        drop.classList.remove("drag");
+
+
+        /*
+           Несколько файлов одновременно.
+        */
+
+        for(
+            const file
+            of event.dataTransfer.files
+        ){
+
+            processFile(file);
+        }
+    }
+);
+
+
+/* =========================================================
+   INPUT
+========================================================= */
+
+fileInput.addEventListener(
+    "change",
+    () => {
+
+        for(
+            const file
+            of fileInput.files
+        ){
+
+            processFile(file);
+        }
+
+
+        /*
+           Позволяет снова выбрать тот же файл.
+        */
+
+        fileInput.value = "";
+    }
+);
+
+
+/* =========================================================
+   CLEAR
+========================================================= */
+
+clear.addEventListener(
+    "click",
+    () => {
+
+        for(
+            const key
+            in groups
+        ){
+
+            groups[key].length = 0;
+        }
+
+
+        totalReadBytes = 0;
+
+        result.innerHTML = "";
+        error.textContent = "";
+    }
+);
+
+</script>
+
+</body>
+</html>

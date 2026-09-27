@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>NDS / GBA ROM Code Reader</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin-top: 50px;
+}
+
+.drop {
+    border: 2px dashed #888;
+    padding: 35px;
+    width: 450px;
+    margin: 20px auto;
+    cursor: pointer;
+}
+
+#result {
+    margin: 30px auto;
+    width: 650px;
+    text-align: left;
+    font-size: 18px;
+}
+
+.section {
+    margin-top: 25px;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.item {
+    padding: 5px;
+    border-bottom: 1px solid #ddd;
+}
+</style>
+</head>
+
+<body>
+
+<h2>GBA / NDS ROM Code Reader</h2>
+
+<div id="drop" class="drop">
+    Перетащи сюда ROM-файлы<br>
+    (.nds и .gba)
+</div>
+
+<input id="file" type="file" accept=".nds,.gba" multiple hidden>
+
+<div id="result"></div>
+
+<script>
+
+const drop = document.getElementById("drop");
+const fileInput = document.getElementById("file");
+const result = document.getElementById("result");
+
+drop.onclick = () => fileInput.click();
+
+drop.ondragover = e => {
+    e.preventDefault();
+};
+
+drop.ondrop = e => {
+    e.preventDefault();
+    readFiles(e.dataTransfer.files);
+};
+
+fileInput.onchange = () => {
+    readFiles(fileInput.files);
+};
+
+
+function readFiles(files) {
+
+    result.innerHTML = "";
+
+    let nds = [];
+    let gba = [];
+
+    [...files].forEach(file => {
+
+        const ext = file.name.toLowerCase().split(".").pop();
+
+        if (ext !== "nds" && ext !== "gba")
+            return;
+
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+
+            const data = new Uint8Array(e.target.result);
+
+            let code = "";
+
+            if (ext === "nds") {
+
+                for (let i = 0x0C; i < 0x10; i++) {
+                    code += String.fromCharCode(data[i]);
+                }
+
+                nds.push(code + " — " + file.name);
+
+            }
+
+            if (ext === "gba") {
+
+                for (let i = 0xAC; i < 0xB0; i++) {
+                    code += String.fromCharCode(data[i]);
+                }
+
+                gba.push(code + " — " + file.name);
+
+            }
+
+            showResults(nds, gba);
+        };
+
+        reader.readAsArrayBuffer(file.slice(0, 0xB0));
+    });
+}
+
+
+function showResults(nds, gba) {
+
+    result.innerHTML = "";
+
+    if (nds.length) {
+        result.innerHTML += "<div class='section'>NDS</div>";
+        nds.forEach(x => {
+            result.innerHTML += "<div class='item'>" + x + "</div>";
+        });
+    }
+
+    if (gba.length) {
+        result.innerHTML += "<div class='section'>GBA</div>";
+        gba.forEach(x => {
+            result.innerHTML += "<div class='item'>" + x + "</div>";
+        });
+    }
+}
+
+</script>
+
+</body>
+</html>
