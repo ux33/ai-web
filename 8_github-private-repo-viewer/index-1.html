@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Private Viewer</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button, input, select {
+    font: inherit;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.header {
+    margin-bottom: 24px;
+}
+
+.header h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+}
+
+.header p {
+    margin: 0;
+    color: #8b949e;
+}
+
+.panel {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.form {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+}
+
+input, select {
+    width: 100%;
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    outline: none;
+}
+
+input:focus, select:focus {
+    border-color: #58a6ff;
+}
+
+button {
+    background: #238636;
+    color: white;
+    border: 0;
+    border-radius: 6px;
+    padding: 10px 18px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+button:hover {
+    background: #2ea043;
+}
+
+button.secondary {
+    background: #21262d;
+    border: 1px solid #30363d;
+}
+
+.status {
+    margin-top: 12px;
+    color: #8b949e;
+}
+
+.status.error {
+    color: #f85149;
+}
+
+.status.success {
+    color: #3fb950;
+}
+
+.workspace {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 16px;
+    min-height: 650px;
+}
+
+.sidebar, .viewer {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.sidebar-header,
+.viewer-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid #30363d;
+    background: #1c2128;
+}
+
+.sidebar-header {
+    display: flex;
+    gap: 8px;
+}
+
+.tree {
+    padding: 8px;
+    overflow: auto;
+    max-height: 620px;
+}
+
+.tree-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #c9d1d9;
+    user-select: none;
+}
+
+.tree-item:hover {
+    background: #21262d;
+}
+
+.tree-item.file.active {
+    background: #1f6feb;
+    color: white;
+}
+
+.tree-item.folder {
+    font-weight: 600;
+}
+
+.indent {
+    margin-left: 18px;
+}
+
+.viewer {
+    display: flex;
+    flex-direction: column;
+}
+
+.viewer-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}
+
+.file-path {
+    color: #8b949e;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+pre {
+    margin: 0;
+    padding: 20px;
+    overflow: auto;
+    flex: 1;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre;
+}
+
+.placeholder {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8b949e;
+    padding: 40px;
+    text-align: center;
+}
+
+.repo-info {
+    color: #8b949e;
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+@media (max-width: 800px) {
+    .container {
+        padding: 12px;
+    }
+
+    .form {
+        grid-template-columns: 1fr;
+    }
+
+    .workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        min-height: 250px;
+    }
+
+    .tree {
+        max-height: 350px;
+    }
+
+    .viewer {
+        min-height: 500px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="header">
+        <h1>GitHub Private Viewer</h1>
+        <p>Просмотр содержимого приватного GitHub репозитория</p>
+    </div>
+
+    <div class="panel">
+
+        <div class="form">
+
+            <input
+                id="token"
+                type="password"
+                placeholder="GitHub Token"
+                autocomplete="off"
+            >
+
+            <select id="repo">
+                <option value="">Сначала введите токен</option>
+            </select>
+
+            <button onclick="connect()">
+                Подключиться
+            </button>
+
+        </div>
+
+        <div id="status" class="status">
+            Токен используется только в этом браузере.
+        </div>
+
+    </div>
+
+    <div id="workspace" class="workspace" style="display:none">
+
+        <div class="sidebar">
+
+            <div class="sidebar-header">
+                <button
+                    class="secondary"
+                    onclick="loadRepository()"
+                    style="width:100%"
+                >
+                    ↻ Обновить
+                </button>
+            </div>
+
+            <div id="repoInfo" class="repo-info" style="padding:12px">
+            </div>
+
+            <div id="tree" class="tree"></div>
+
+        </div>
+
+        <div class="viewer">
+
+            <div class="viewer-header">
+                <div id="filePath" class="file-path">
+                    Выбери файл
+                </div>
+
+                <div id="fileSize"></div>
+            </div>
+
+            <div id="content" class="placeholder">
+                Выбери файл слева
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+const API = "https://api.github.com";
+
+let token = "";
+let currentRepo = null;
+let currentTree = [];
+let currentBranch = "";
+
+
+/* =========================
+   GitHub API
+========================= */
+
+async function github(url, options = {}) {
+
+    const response = await fetch(API + url, {
+        ...options,
+
+        headers: {
+            "Accept": "application/vnd.github+json",
+            "Authorization": `Bearer ${token}`,
+            "X-GitHub-Api-Version": "2022-11-28",
+            ...(options.headers || {})
+        }
+    });
+
+    if (!response.ok) {
+
+        let message = "";
+
+        try {
+            const data = await response.json();
+            message = data.message || "";
+        } catch {}
+
+        throw new Error(
+            `GitHub API ${response.status}: ${message}`
+        );
+    }
+
+    return response.json();
+}
+
+
+/* =========================
+   Connect
+========================= */
+
+async function connect() {
+
+    const input = document.getElementById("token");
+
+    token = input.value.trim();
+
+    if (!token) {
+        setStatus("Введите GitHub token", true);
+        return;
+    }
+
+    setStatus("Проверяем токен...");
+
+    try {
+
+        const user = await github("/user");
+
+        setStatus(
+            `Авторизован как ${user.login}. Загружаем репозитории...`
+        );
+
+        await loadRepositories();
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "Не удалось подключиться: " + error.message,
+            true
+        );
+
+    }
+
+}
+
+
+/* =========================
+   Repositories
+========================= */
+
+async function loadRepositories() {
+
+    const repos = await github(
+        "/user/repos?per_page=100&sort=updated"
+    );
+
+    const select = document.getElementById("repo");
+
+    select.innerHTML = "";
+
+    if (!repos.length) {
+
+        select.innerHTML =
+            `<option value="">Репозитории не найдены</option>`;
+
+        return;
+    }
+
+    for (const repo of repos) {
+
+        const option = document.createElement("option");
+
+        option.value = repo.full_name;
+
+        option.textContent =
+            `${repo.private ? "🔒" : "🌐"} ${repo.full_name}`;
+
+        option.dataset.defaultBranch =
+            repo.default_branch;
+
+        select.appendChild(option);
+    }
+
+    currentRepo = select.value;
+
+    await loadRepository();
+
+    document.getElementById("workspace").style.display = "grid";
+
+    setStatus(
+        `Найдено репозиториев: ${repos.length}`,
+        false,
+        true
+    );
+}
+
+
+/* =========================
+   Load repository
+========================= */
+
+async function loadRepository() {
+
+    const select = document.getElementById("repo");
+
+    if (!select.value) return;
+
+    currentRepo = select.value;
+
+    const selected =
+        select.options[select.selectedIndex];
+
+    currentBranch =
+        selected.dataset.defaultBranch;
+
+    setStatus("Загружаем файлы...");
+
+    try {
+
+        const repo = await github(
+            `/repos/${currentRepo}`
+        );
+
+        currentBranch = repo.default_branch;
+
+        document.getElementById("repoInfo").innerHTML =
+            `<b>${escapeHtml(repo.full_name)}</b><br>
+             Ветка: ${escapeHtml(currentBranch)}<br>
+             ${repo.private ? "🔒 Private" : "🌐 Public"}`;
+
+        const tree = await github(
+            `/repos/${currentRepo}/git/trees/${encodeURIComponent(currentBranch)}?recursive=1`
+        );
+
+        if (tree.truncated) {
+
+            setStatus(
+                "GitHub ограничил размер дерева файлов. В очень больших репозиториях часть файлов может отсутствовать.",
+                true
+            );
+        }
+
+        currentTree = tree.tree || [];
+
+        renderTree();
+
+        setStatus(
+            `Загружено элементов: ${currentTree.length}`,
+            false,
+            true
+        );
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "Ошибка загрузки: " + error.message,
+            true
+        );
+    }
+}
+
+
+/* =========================
+   Tree
+========================= */
+
+function renderTree() {
+
+    const container =
+        document.getElementById("tree");
+
+    container.innerHTML = "";
+
+    const root = {};
+
+    for (const item of currentTree) {
+
+        const parts = item.path.split("/");
+
+        let node = root;
+
+        for (let i = 0; i < parts.length; i++) {
+
+            const name = parts[i];
+
+            if (!node[name]) {
+
+                node[name] = {
+                    __children: {},
+                    __item: null
+                };
+            }
+
+            if (i === parts.length - 1) {
+
+                node[name].__item = item;
+
+            } else {
+
+                node = node[name].__children;
+            }
+        }
+    }
+
+    renderNodes(root, container, 0);
+}
+
+
+function renderNodes(nodes, container, depth) {
+
+    const names = Object.keys(nodes)
+        .filter(name => !name.startsWith("__"))
+        .sort((a, b) => {
+
+            const aFolder =
+                Object.keys(nodes[a].__children).length > 0;
+
+            const bFolder =
+                Object.keys(nodes[b].__children).length > 0;
+
+            if (aFolder !== bFolder)
+                return bFolder - aFolder;
+
+            return a.localeCompare(b);
+        });
+
+    for (const name of names) {
+
+        const node = nodes[name];
+
+        const isFolder =
+            Object.keys(node.__children).length > 0;
+
+        const element =
+            document.createElement("div");
+
+        element.className =
+            "tree-item " +
+            (isFolder ? "folder" : "file");
+
+        element.style.paddingLeft =
+            `${9 + depth * 18}px`;
+
+        element.innerHTML =
+            `<span>${isFolder ? "📁" : getFileIcon(name)}</span>
+             <span>${escapeHtml(name)}</span>`;
+
+        if (isFolder) {
+
+            const children =
+                document.createElement("div");
+
+            children.style.display = "none";
+
+            element.onclick = () => {
+
+                const open =
+                    children.style.display !== "none";
+
+                children.style.display =
+                    open ? "none" : "block";
+
+                element.querySelector("span")
+                    .textContent =
+                    open ? "📁" : "📂";
+            };
+
+            container.appendChild(element);
+
+            renderNodes(
+                node.__children,
+                container,
+                depth + 1
+            );
+
+            const allChildren =
+                Array.from(container.children)
+                    .slice(-countNodes(node.__children));
+
+            for (const child of allChildren) {
+                child.style.display = "none";
+            }
+
+        } else {
+
+            element.onclick = () => {
+
+                document
+                    .querySelectorAll(".tree-item.file")
+                    .forEach(el =>
+                        el.classList.remove("active")
+                    );
+
+                element.classList.add("active");
+
+                openFile(node.__item);
+            };
+
+            container.appendChild(element);
+        }
+    }
+}
+
+
+function countNodes(nodes) {
+
+    let count = 0;
+
+    for (const name of Object.keys(nodes)) {
+
+        if (name.startsWith("__")) continue;
+
+        count++;
+
+        if (
+            Object.keys(nodes[name].__children).length
+        ) {
+            count += countNodes(nodes[name].__children);
+        }
+    }
+
+    return count;
+}
+
+
+/* =========================
+   Open file
+========================= */
+
+async function openFile(item) {
+
+    const content =
+        document.getElementById("content");
+
+    document.getElementById("filePath")
+        .textContent = item.path;
+
+    document.getElementById("fileSize")
+        .textContent = formatBytes(item.size || 0);
+
+    content.className = "";
+
+    content.innerHTML =
+        "<div class='placeholder'>Загрузка...</div>";
+
+    try {
+
+        const data = await github(
+            `/repos/${currentRepo}/contents/${item.path}?ref=${encodeURIComponent(currentBranch)}`
+        );
+
+        if (data.type !== "file") {
+
+            throw new Error("Это не файл");
+        }
+
+        if (data.encoding !== "base64") {
+
+            throw new Error(
+                "GitHub вернул неизвестный формат"
+            );
+        }
+
+        const text =
+            decodeBase64(data.content);
+
+        const pre =
+            document.createElement("pre");
+
+        pre.textContent = text;
+
+        content.innerHTML = "";
+
+        content.appendChild(pre);
+
+    } catch (error) {
+
+        console.error(error);
+
+        content.innerHTML =
+            `<div class="placeholder">
+                Не удалось открыть файл:<br><br>
+                ${escapeHtml(error.message)}
+            </div>`;
+    }
+}
+
+
+/* =========================
+   Helpers
+========================= */
+
+function decodeBase64(base64) {
+
+    base64 = base64.replace(/\s/g, "");
+
+    const binary =
+        atob(base64);
+
+    const bytes =
+        Uint8Array.from(
+            binary,
+            char => char.charCodeAt(0)
+        );
+
+    return new TextDecoder("utf-8", {
+        fatal: false
+    }).decode(bytes);
+}
+
+
+function getFileIcon(name) {
+
+    const ext =
+        name.split(".").pop().toLowerCase();
+
+    const icons = {
+
+        js: "🟨",
+        ts: "🔷",
+        jsx: "⚛️",
+        tsx: "⚛️",
+
+        html: "🌐",
+        css: "🎨",
+        scss: "🎨",
+
+        json: "🔧",
+        xml: "📄",
+        yaml: "⚙️",
+        yml: "⚙️",
+
+        md: "📝",
+        txt: "📄",
+
+        py: "🐍",
+        java: "☕",
+        c: "©️",
+        cpp: "©️",
+        h: "📘",
+
+        php: "🐘",
+        go: "🔵",
+        rs: "🦀",
+
+        svg: "🖼️",
+        png: "🖼️",
+        jpg: "🖼️",
+        jpeg: "🖼️",
+
+        zip: "📦",
+        pdf: "📕"
+    };
+
+    return icons[ext] || "📄";
+}
+
+
+function formatBytes(bytes) {
+
+    if (!bytes) return "0 B";
+
+    const units = [
+        "B",
+        "KB",
+        "MB",
+        "GB"
+    ];
+
+    const i =
+        Math.floor(
+            Math.log(bytes) /
+            Math.log(1024)
+        );
+
+    return (
+        (bytes / Math.pow(1024, i))
+            .toFixed(i === 0 ? 0 : 1)
+        + " "
+        + units[i]
+    );
+}
+
+
+function escapeHtml(value) {
+
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+function setStatus(
+    message,
+    error = false,
+    success = false
+) {
+
+    const el =
+        document.getElementById("status");
+
+    el.textContent = message;
+
+    el.className =
+        "status" +
+        (error ? " error" : "") +
+        (success ? " success" : "");
+}
+
+
+/* Repository change */
+
+document
+    .getElementById("repo")
+    .addEventListener("change", loadRepository);
+
+
+/* Enter */
+
+document
+    .getElementById("token")
+    .addEventListener("keydown", e => {
+
+        if (e.key === "Enter") {
+            connect();
+        }
+
+    });
+
+</script>
+
+</body>
+</html>
