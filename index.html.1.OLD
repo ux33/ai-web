@@ -74,80 +74,6 @@ const branch = "main";
 
 const apps = document.getElementById("apps");
 
-
-async function getBestIndex(folder) {
-
-    const url =
-        `https://api.github.com/repos/${username}/${repository}/contents/${folder}?ref=${branch}`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-        throw new Error("GitHub API error");
-    }
-
-    const files = await response.json();
-
-    // Ищем:
-    // index.html
-    // index-2.html
-    // index-2.1.html
-    // index-10.html
-    // и т.д.
-    const indexes = files.filter(item =>
-        item.type === "file" &&
-        /^index(?:-(\d+(?:\.\d+)*))?\.html$/i.test(item.name)
-    );
-
-    if (indexes.length === 0) {
-        return `./${folder}/`;
-    }
-
-
-    function getVersion(name) {
-
-        const match = name.match(
-            /^index(?:-(\d+(?:\.\d+)*))?\.html$/i
-        );
-
-        // index.html = версия 1
-        if (!match || !match[1]) {
-            return [1];
-        }
-
-        return match[1].split(".").map(Number);
-    }
-
-
-    // Сортируем от новой версии к старой
-    indexes.sort((a, b) => {
-
-        const va = getVersion(a.name);
-        const vb = getVersion(b.name);
-
-        for (
-            let i = 0;
-            i < Math.max(va.length, vb.length);
-            i++
-        ) {
-
-            const aNum = va[i] || 0;
-            const bNum = vb[i] || 0;
-
-            if (aNum !== bNum) {
-                return bNum - aNum;
-            }
-        }
-
-        return 0;
-    });
-
-
-    // Самый новый index
-    return `./${folder}/${indexes[0].name}`;
-}
-
-
 async function loadApps() {
 
     try {
@@ -163,7 +89,6 @@ async function loadApps() {
 
         const files = await response.json();
 
-
         const folders = files
             .filter(item =>
                 item.type === "dir" &&
@@ -175,23 +100,19 @@ async function loadApps() {
                 })
             );
 
-
         apps.innerHTML = "";
-
 
         for (const folder of folders) {
 
             const link = document.createElement("a");
 
-            // Выбираем самый новый index
-            link.href = await getBestIndex(folder.name);
-
+            link.href =
+                `./${folder.name}/`;
 
             const name =
                 folder.name
                     .replace(/^\d+_/, "")
                     .replace(/[-_]/g, " ");
-
 
             link.innerHTML = `
                 <div class="name">
@@ -203,10 +124,8 @@ async function loadApps() {
                 </div>
             `;
 
-
             apps.appendChild(link);
         }
-
 
         if (folders.length === 0) {
             apps.textContent = "WebApps не найдены.";
@@ -222,7 +141,6 @@ async function loadApps() {
         console.error(error);
     }
 }
-
 
 loadApps();
 
