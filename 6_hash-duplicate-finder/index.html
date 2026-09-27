@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Поиск дубликатов по хешам</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #f5f7fa;
+            --card: #ffffff;
+            --border: #dfe3e8;
+            --border-hover: #c7cdd4;
+            --text: #1f2328;
+            --muted: #6b7280;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: #eff6ff;
+            --success: #15803d;
+            --success-bg: #f0fdf4;
+            --danger: #b91c1c;
+            --danger-bg: #fef2f2;
+            --code-bg: #f6f8fa;
+            --radius: 12px;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100%;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                Roboto,
+                Helvetica,
+                Arial,
+                sans-serif;
+            line-height: 1.5;
+        }
+
+        .container {
+            width: min(900px, calc(100% - 32px));
+            margin: 48px auto;
+        }
+
+        /* --------------------------------------------------
+           Заголовок
+        -------------------------------------------------- */
+
+        .header {
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            margin: 0 0 6px;
+            font-size: 28px;
+            line-height: 1.25;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .header p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 15px;
+        }
+
+        /* --------------------------------------------------
+           Основная карточка
+        -------------------------------------------------- */
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+        }
+
+        .section-title {
+            margin: 0 0 4px;
+            font-size: 18px;
+            font-weight: 650;
+        }
+
+        .section-description {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        /* --------------------------------------------------
+           Способы ввода
+        -------------------------------------------------- */
+
+        .input-methods {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .method-button {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 48px;
+            padding: 10px 16px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: #fff;
+            color: var(--text);
+            font: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition:
+                background 0.15s ease,
+                border-color 0.15s ease,
+                color 0.15s ease;
+        }
+
+        .method-button:hover {
+            border-color: var(--border-hover);
+            background: #fafafa;
+        }
+
+        .method-button.active {
+            border-color: var(--primary);
+            background: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .method-button svg {
+            width: 18px;
+            height: 18px;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+
+        /* --------------------------------------------------
+           Зона ввода
+        -------------------------------------------------- */
+
+        .drop-zone {
+            position: relative;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: #fff;
+            transition:
+                border-color 0.15s ease,
+                background 0.15s ease;
+        }
+
+        .drop-zone.drag-over {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .input-textarea {
+            display: block;
+            width: 100%;
+            min-height: 260px;
+            padding: 15px;
+            border: 0;
+            outline: 0;
+            resize: vertical;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--text);
+            font-family:
+                "SFMono-Regular",
+                Consolas,
+                "Liberation Mono",
+                Menlo,
+                monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .input-textarea::placeholder {
+            color: #9ca3af;
+        }
+
+        .drop-hint {
+            padding: 0 15px 13px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .drop-hint strong {
+            color: #4b5563;
+        }
+
+        /* --------------------------------------------------
+           Кнопка запуска
+        -------------------------------------------------- */
+
+        .actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .primary-button {
+            min-height: 44px;
+            padding: 10px 18px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--primary);
+            color: #fff;
+            font: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .primary-button:hover {
+            background: var(--primary-hover);
+        }
+
+        .primary-button:active {
+            transform: translateY(1px);
+        }
+
+        .secondary-button {
+            min-height: 44px;
+            padding: 10px 18px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--text);
+            font: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition:
+                background 0.15s ease,
+                border-color 0.15s ease;
+        }
+
+        .secondary-button:hover {
+            background: #fafafa;
+            border-color: var(--border-hover);
+        }
+
+        /* --------------------------------------------------
+           Статус
+        -------------------------------------------------- */
+
+        .status {
+            min-height: 20px;
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .status.success {
+            color: var(--success);
+        }
+
+        .status.error {
+            color: var(--danger);
+        }
+
+        /* --------------------------------------------------
+           Результат
+        -------------------------------------------------- */
+
+        .result-section {
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 10px;
+        }
+
+        .result-title {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 650;
+        }
+
+        .result-textarea {
+            display: block;
+            width: 100%;
+            min-height: 260px;
+            padding: 15px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            outline: none;
+            resize: vertical;
+            background: var(--code-bg);
+            color: var(--text);
+            font-family:
+                "SFMono-Regular",
+                Consolas,
+                "Liberation Mono",
+                Menlo,
+                monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .result-textarea:focus {
+            border-color: var(--primary);
+        }
+
+        /* --------------------------------------------------
+           Пример формата
+        -------------------------------------------------- */
+
+        .example-section {
+            margin-top: 18px;
+        }
+
+        .example-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 0;
+            border: 0;
+            background: none;
+            color: var(--muted);
+            font: inherit;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .example-toggle:hover {
+            color: var(--text);
+        }
+
+        .example-toggle svg {
+            width: 15px;
+            height: 15px;
+            transition: transform 0.15s ease;
+        }
+
+        .example-toggle.open svg {
+            transform: rotate(180deg);
+        }
+
+        .example-content {
+            margin-top: 12px;
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: var(--code-bg);
+        }
+
+        .example-content.hidden {
+            display: none;
+        }
+
+        .example-description {
+            margin: 0 0 12px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .example-code {
+            margin: 0;
+            overflow-x: auto;
+            color: #374151;
+            font-family:
+                "SFMono-Regular",
+                Consolas,
+                "Liberation Mono",
+                Menlo,
+                monospace;
+            font-size: 12px;
+            line-height: 1.7;
+            white-space: pre;
+        }
+
+        .example-code .comment {
+            color: #9ca3af;
+        }
+
+        /* --------------------------------------------------
+           Скрытый input
+        -------------------------------------------------- */
+
+        .hidden {
+            display: none;
+        }
+
+        /* --------------------------------------------------
+           Адаптация под телефон
+        -------------------------------------------------- */
+
+        @media (max-width: 640px) {
+            .container {
+                width: min(100% - 20px, 900px);
+                margin: 24px auto;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .card {
+                padding: 16px;
+            }
+
+            .input-methods {
+                grid-template-columns: 1fr;
+            }
+
+            .actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .primary-button,
+            .secondary-button {
+                width: 100%;
+            }
+
+            .result-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="container">
+
+        <!-- Заголовок -->
+        <header class="header">
+            <h1>Поиск дубликатов по хешам</h1>
+            <p>
+                Загрузите файл с хешами или вставьте его содержимое,
+                чтобы найти файлы с одинаковыми хешами.
+            </p>
+        </header>
+
+
+        <!-- Основная карточка -->
+        <section class="card">
+
+            <h2 class="section-title">Исходные данные</h2>
+
+            <p class="section-description">
+                Выберите способ передачи данных.
+            </p>
+
+
+            <!-- Два способа ввода на одной строке -->
+            <div class="input-methods">
+
+                <button
+                    type="button"
+                    class="method-button active"
+                    id="pasteButton"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <rect x="5" y="4" width="14" height="16" rx="2"></rect>
+                        <path d="M9 4h6"></path>
+                        <path d="M9 9h6"></path>
+                        <path d="M9 13h6"></path>
+                        <path d="M9 17h4"></path>
+                    </svg>
+
+                    Вставить содержимое
+                </button>
+
+
+                <button
+                    type="button"
+                    class="method-button"
+                    id="fileButton"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <path d="M14 2v6h6"></path>
+                        <path d="M12 18v-6"></path>
+                        <path d="m9 15 3-3 3 3"></path>
+                    </svg>
+
+                    Загрузить файл
+                </button>
+
+            </div>
+
+
+            <!--
+                accept специально НЕ указан.
+
+                Файл может иметь любое расширение:
+                .xxh3, .md5, .sha1, .sha256, .txt и т.д.
+            -->
+            <input
+                type="file"
+                id="inputFile"
+                class="hidden"
+            >
+
+
+            <!-- Поле ввода / зона Drag & Drop -->
+            <div
+                class="drop-zone"
+                id="dropZone"
+            >
+
+                <textarea
+                    id="inputText"
+                    class="input-textarea"
+                    placeholder="Вставьте сюда содержимое файла с хешами..."
+                    spellcheck="false"
+                ></textarea>
+
+                <div class="drop-hint">
+                    Можно также <strong>перетащить файл</strong> в эту область.
+                    Поддерживается любой тип файла с текстовым содержимым.
+                </div>
+
+            </div>
+
+
+            <!-- Кнопка запуска -->
+            <div class="actions">
+
+                <button
+                    type="button"
+                    class="primary-button"
+                    id="findButton"
+                >
+                    Найти дубликаты
+                </button>
+
+                <button
+                    type="button"
+                    class="secondary-button"
+                    id="clearButton"
+                >
+                    Очистить
+                </button>
+
+            </div>
+
+
+            <!-- Статус -->
+            <div
+                id="status"
+                class="status"
+                aria-live="polite"
+            ></div>
+
+
+            <!-- Результат -->
+            <section class="result-section">
+
+                <div class="result-header">
+                    <h2 class="result-title">Результат</h2>
+
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        id="downloadButton"
+                    >
+                        Скачать 2_OUT.txt
+                    </button>
+                </div>
+
+
+                <textarea
+                    id="resultText"
+                    class="result-textarea"
+                    readonly
+                    spellcheck="false"
+                    placeholder="Здесь появится результат..."
+                ></textarea>
+
+            </section>
+
+
+            <!-- Пример формата -->
+            <section class="example-section">
+
+                <button
+                    type="button"
+                    class="example-toggle"
+                    id="exampleToggle"
+                    aria-expanded="false"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="m6 9 6 6 6-6"></path>
+                    </svg>
+
+                    Показать пример формата
+                </button>
+
+
+                <div
+                    id="exampleContent"
+                    class="example-content hidden"
+                >
+
+                    <p class="example-description">
+                        Каждая строка содержит хеш, пробел и путь к файлу.
+                        Строки, начинающиеся с <strong>;</strong>, считаются комментариями
+                        и игнорируются.
+                    </p>
+
+
+                    <pre class="example-code"><span class="comment">; SHA-1 checksums generated by TeraCopy</span>
+<span class="comment">; teracopy.com</span>
+
+A7F3C91D2E8B44A1F6C3D9E0123456789ABCDEF01 *photo.jpg
+5B82D1A4C7E936F0B123456789ABCDEF012345678 *document.pdf
+A7F3C91D2E8B44A1F6C3D9E0123456789ABCDEF01 *backup\photo.jpg
+C4E91A72F035B8D6E1A2C3456789DEF0123456789 *archive.zip
+91F3B7D2A8C456E0F123456789ABCDEF012345678 *image.png</pre>
+
+                </div>
+
+            </section>
+
+        </section>
+
+    </main>
+
+
+    <script>
+        // --------------------------------------------------
+        // Получаем элементы страницы
+        // --------------------------------------------------
+
+        const pasteButton = document.getElementById("pasteButton");
+        const fileButton = document.getElementById("fileButton");
+        const inputFile = document.getElementById("inputFile");
+
+        const dropZone = document.getElementById("dropZone");
+        const inputText = document.getElementById("inputText");
+
+        const findButton = document.getElementById("findButton");
+        const clearButton = document.getElementById("clearButton");
+
+        const resultText = document.getElementById("resultText");
+        const downloadButton = document.getElementById("downloadButton");
+
+        const status = document.getElementById("status");
+
+        const exampleToggle = document.getElementById("exampleToggle");
+        const exampleContent = document.getElementById("exampleContent");
+
+
+        // --------------------------------------------------
+        // Выбор способа ввода
+        // --------------------------------------------------
+
+        pasteButton.addEventListener("click", () => {
+            pasteButton.classList.add("active");
+            fileButton.classList.remove("active");
+
+            inputText.focus();
+        });
+
+
+        fileButton.addEventListener("click", () => {
+            inputFile.click();
+        });
+
+
+        // --------------------------------------------------
+        // Выбор файла
+        // --------------------------------------------------
+
+        inputFile.addEventListener("change", async () => {
+            const file = inputFile.files[0];
+
+            if (!file) {
+                return;
+            }
+
+            await loadFile(file);
+        });
+
+
+        // --------------------------------------------------
+        // Загрузка файла
+        // --------------------------------------------------
+
+        async function loadFile(file) {
+            try {
+                const text = await file.text();
+
+                inputText.value = text;
+
+                pasteButton.classList.remove("active");
+                fileButton.classList.add("active");
+
+                setStatus(
+                    `Файл загружен: ${file.name}`,
+                    "success"
+                );
+
+            } catch (error) {
+                setStatus(
+                    "Не удалось прочитать файл.",
+                    "error"
+                );
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Drag & Drop
+        // --------------------------------------------------
+
+        dropZone.addEventListener("dragover", (event) => {
+            event.preventDefault();
+
+            dropZone.classList.add("drag-over");
+        });
+
+
+        dropZone.addEventListener("dragleave", (event) => {
+            /*
+                Если курсор ушёл из самой зоны,
+                убираем визуальное состояние.
+            */
+            if (!dropZone.contains(event.relatedTarget)) {
+                dropZone.classList.remove("drag-over");
+            }
+        });
+
+
+        dropZone.addEventListener("drop", async (event) => {
+            event.preventDefault();
+
+            dropZone.classList.remove("drag-over");
+
+            const file = event.dataTransfer.files[0];
+
+            if (!file) {
+                return;
+            }
+
+            await loadFile(file);
+        });
+
+
+        // --------------------------------------------------
+        // Поиск дубликатов
+        // --------------------------------------------------
+
+        findButton.addEventListener("click", () => {
+            findDuplicates();
+        });
+
+
+        function findDuplicates() {
+            const text = inputText.value;
+
+            if (!text.trim()) {
+                setStatus(
+                    "Вставьте содержимое или загрузите файл.",
+                    "error"
+                );
+
+                return;
+            }
+
+
+            const hashes = new Map();
+
+            /*
+                Разбиваем исходный текст на строки.
+
+                Поддерживаем как Windows (\r\n),
+                так и Unix (\n) переводы строк.
+            */
+            const lines = text.split(/\r?\n/);
+
+
+            for (let line of lines) {
+
+                // Убираем пробелы по краям строки.
+                line = line.trim();
+
+
+                // Пустые строки пропускаем.
+                if (!line) {
+                    continue;
+                }
+
+
+                /*
+                    Комментарии TeraCopy начинаются с ";".
+
+                    Например:
+                    ; SHA-1 checksums generated by TeraCopy
+                */
+                if (line.startsWith(";")) {
+                    continue;
+                }
+
+
+                /*
+                    Важно:
+
+                    Разделяем строку только по ПЕРВОМУ
+                    обычному пробелу.
+
+                    Это соответствует исходной Python-версии:
+                        line.split(" ", 1)
+
+                    Например:
+                        HASH *folder/my file.jpg
+
+                    HASH       -> хеш
+                    *folder...  -> имя файла
+                */
+                const separatorIndex = line.indexOf(" ");
+
+
+                // Некорректную строку пропускаем.
+                if (separatorIndex === -1) {
+                    continue;
+                }
+
+
+                const fileHash = line
+                    .substring(0, separatorIndex)
+                    .trim();
+
+                const filename = line
+                    .substring(separatorIndex + 1)
+                    .trim();
+
+
+                // Если хеш или имя файла отсутствует,
+                // строку пропускаем.
+                if (!fileHash || !filename) {
+                    continue;
+                }
+
+
+                // Если такого хеша ещё нет,
+                // создаём для него массив файлов.
+                if (!hashes.has(fileHash)) {
+                    hashes.set(fileHash, []);
+                }
+
+
+                // Добавляем файл к этому хешу.
+                hashes.get(fileHash).push(filename);
+            }
+
+
+            // --------------------------------------------------
+            // Формируем результат
+            // --------------------------------------------------
+
+            let output = "НАЙДЕННЫЕ ДУБЛИКАТЫ:\n\n";
+
+            let anyDuplicates = false;
+
+
+            for (const [hash, files] of hashes) {
+
+                /*
+                    Дубликат найден, если одному хешу
+                    соответствует больше одного файла.
+                */
+                if (files.length > 1) {
+
+                    anyDuplicates = true;
+
+                    output += `Хеш ${hash}:\n`;
+
+                    for (const filename of files) {
+                        output += `    ${filename}\n`;
+                    }
+
+                    output += "\n";
+                }
+            }
+
+
+            if (!anyDuplicates) {
+                output += "Дубликатов не найдено.";
+            }
+
+
+            // Показываем результат.
+            resultText.value = output;
+
+
+            if (anyDuplicates) {
+                setStatus(
+                    "Дубликаты найдены.",
+                    "success"
+                );
+            } else {
+                setStatus(
+                    "Дубликатов не найдено.",
+                    "success"
+                );
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Очистка
+        // --------------------------------------------------
+
+        clearButton.addEventListener("click", () => {
+
+            inputText.value = "";
+            resultText.value = "";
+
+            inputFile.value = "";
+
+            pasteButton.classList.add("active");
+            fileButton.classList.remove("active");
+
+            setStatus("", "");
+
+            inputText.focus();
+        });
+
+
+        // --------------------------------------------------
+        // Скачать результат
+        // --------------------------------------------------
+
+        downloadButton.addEventListener("click", () => {
+
+            const content = resultText.value;
+
+
+            if (!content) {
+                setStatus(
+                    "Сначала выполните поиск дубликатов.",
+                    "error"
+                );
+
+                return;
+            }
+
+
+            /*
+                Создаём обычный текстовый Blob.
+
+                Никакого сервера для этого не требуется:
+                файл создаётся непосредственно в браузере.
+            */
+            const blob = new Blob(
+                [content],
+                {
+                    type: "text/plain;charset=utf-8"
+                }
+            );
+
+
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement("a");
+
+            link.href = url;
+            link.download = "2_OUT.txt";
+
+            document.body.appendChild(link);
+
+            link.click();
+
+            link.remove();
+
+            URL.revokeObjectURL(url);
+        });
+
+
+        // --------------------------------------------------
+        // Статус
+        // --------------------------------------------------
+
+        function setStatus(message, type) {
+
+            status.textContent = message;
+
+            status.className = "status";
+
+            if (type) {
+                status.classList.add(type);
+            }
+        }
+
+
+        // --------------------------------------------------
+        // Показать / скрыть пример
+        // --------------------------------------------------
+
+        exampleToggle.addEventListener("click", () => {
+
+            const isHidden =
+                exampleContent.classList.contains("hidden");
+
+
+            if (isHidden) {
+
+                exampleContent.classList.remove("hidden");
+
+                exampleToggle.classList.add("open");
+
+                exampleToggle.setAttribute(
+                    "aria-expanded",
+                    "true"
+                );
+
+                exampleToggle.lastChild.textContent =
+                    " Скрыть пример формата";
+
+            } else {
+
+                exampleContent.classList.add("hidden");
+
+                exampleToggle.classList.remove("open");
+
+                exampleToggle.setAttribute(
+                    "aria-expanded",
+                    "false"
+                );
+
+                exampleToggle.lastChild.textContent =
+                    " Показать пример формата";
+            }
+        });
+    </script>
+
+</body>
+</html>
+
