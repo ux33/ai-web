@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>My WebApps</title>
+
+<style>
+    body {
+        margin: 0;
+        padding: 40px;
+        font-family: system-ui, sans-serif;
+        background: #171a21;
+        color: #eee;
+    }
+
+    h1 {
+        color: #66c0f4;
+    }
+
+    #apps {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 15px;
+        margin-top: 30px;
+    }
+
+    a {
+        display: block;
+        padding: 20px;
+        border-radius: 10px;
+        background: #1b2838;
+        color: #66c0f4;
+        text-decoration: none;
+        transition: 0.2s;
+    }
+
+    a:hover {
+        background: #26394d;
+        transform: translateY(-2px);
+    }
+
+    .name {
+        font-size: 18px;
+        font-weight: bold;
+    }
+
+    .folder {
+        margin-top: 5px;
+        color: #888;
+        font-size: 13px;
+    }
+
+    .error {
+        color: #f66;
+    }
+</style>
+
+</head>
+
+<body>
+
+<h1>My WebApps</h1>
+
+<div id="apps">Загрузка...</div>
+
+<script>
+
+const username = "ux33";
+const repository = "ai-web";
+const branch = "main";
+
+const apps = document.getElementById("apps");
+
+async function loadApps() {
+
+    try {
+
+        const url =
+            `https://api.github.com/repos/${username}/${repository}/contents/?ref=${branch}`;
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error("GitHub API error");
+        }
+
+        const files = await response.json();
+
+        const folders = files
+            .filter(item =>
+                item.type === "dir" &&
+                /^\d+_/.test(item.name)
+            )
+            .sort((a, b) =>
+                a.name.localeCompare(b.name, undefined, {
+                    numeric: true
+                })
+            );
+
+        apps.innerHTML = "";
+
+        for (const folder of folders) {
+
+            const link = document.createElement("a");
+
+            link.href =
+                `./${folder.name}/`;
+
+            const name =
+                folder.name
+                    .replace(/^\d+_/, "")
+                    .replace(/[-_]/g, " ");
+
+            link.innerHTML = `
+                <div class="name">
+                    ${name}
+                </div>
+
+                <div class="folder">
+                    ${folder.name}
+                </div>
+            `;
+
+            apps.appendChild(link);
+        }
+
+        if (folders.length === 0) {
+            apps.textContent = "WebApps не найдены.";
+        }
+
+    } catch (error) {
+
+        apps.innerHTML =
+            `<div class="error">
+                Не удалось загрузить список WebApps.
+            </div>`;
+
+        console.error(error);
+    }
+}
+
+loadApps();
+
+</script>
+
+</body>
+</html>
