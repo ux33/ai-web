@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Internet Connection Monitor</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #fff;
+      color: #222;
+    }
+
+    h1 {
+      margin: 0 0 20px;
+      font-size: 24px;
+    }
+
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+      background: #fff;
+    }
+
+    .status {
+      text-align: center;
+      padding: 25px 15px;
+      border-radius: 10px;
+      background: #f5f5f5;
+      margin-bottom: 16px;
+    }
+
+    .status-indicator {
+      font-size: 38px;
+      line-height: 1;
+      margin-bottom: 10px;
+    }
+
+    .status-text {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .status-details {
+      margin-top: 8px;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .online {
+      background: #eef9f0;
+    }
+
+    .offline {
+      background: #fff0f0;
+    }
+
+    .unknown {
+      background: #f5f5f5;
+    }
+
+    .settings {
+      display: grid;
+      grid-template-columns: 1fr 150px;
+      gap: 12px;
+      align-items: end;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 5px;
+    }
+
+    input {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    button {
+      padding: 9px 14px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      background: #fff;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #f5f5f5;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .stat {
+      text-align: center;
+      padding: 14px;
+      background: #f7f7f7;
+      border-radius: 8px;
+    }
+
+    .stat-value {
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .stat-label {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    #log {
+      white-space: pre-wrap;
+      background: #f7f7f7;
+      padding: 12px;
+      border-radius: 6px;
+      height: 350px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .hint {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #777;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 12px;
+      }
+
+      .settings {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .buttons button {
+        flex: 1 1 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Internet Connection Monitor</h1>
+
+  <div id="status" class="status unknown">
+    <div id="statusIndicator" class="status-indicator">⚪</div>
+    <div id="statusText" class="status-text">Не проверяется</div>
+    <div id="statusDetails" class="status-details">
+      Нажмите «Старт» для начала мониторинга
+    </div>
+  </div>
+
+  <div class="card">
+
+    <div class="settings">
+
+      <div>
+        <label for="url">URL для проверки интернет-соединения</label>
+        <input
+          id="url"
+          type="url"
+          value="https://www.google.com/generate_204"
+          placeholder="https://example.com"
+        >
+        <div class="hint">
+          Используется только для определения наличия доступа в Интернет.
+        </div>
+      </div>
+
+      <div>
+        <label for="interval">Интервал проверки, сек.</label>
+        <input
+          id="interval"
+          type="number"
+          value="5"
+          min="1"
+          max="3600"
+        >
+      </div>
+
+    </div>
+
+    <div class="buttons">
+      <button id="start">Старт</button>
+      <button id="stop" disabled>Стоп</button>
+      <button id="clear">Очистить лог</button>
+      <button id="export">Скачать лог</button>
+    </div>
+
+  </div>
+
+  <div class="card">
+
+    <div class="stats">
+
+      <div class="stat">
+        <div id="outageCount" class="stat-value">0</div>
+        <div class="stat-label">Обрывов</div>
+      </div>
+
+      <div class="stat">
+        <div id="lastOutage" class="stat-value">—</div>
+        <div class="stat-label">Последний обрыв</div>
+      </div>
+
+      <div class="stat">
+        <div id="currentDuration" class="stat-value">—</div>
+        <div class="stat-label">Текущий статус</div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="card">
+
+    <div style="margin-bottom:8px;">
+      <strong>Журнал событий</strong>
+    </div>
+
+    <div id="log"></div>
+
+  </div>
+
+
+<script>
+(function () {
+
+  const logEl = document.getElementById('log');
+
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
+  const clearBtn = document.getElementById('clear');
+  const exportBtn = document.getElementById('export');
+
+  const urlInput = document.getElementById('url');
+  const intervalInput = document.getElementById('interval');
+
+  const statusBox = document.getElementById('status');
+  const statusIndicator = document.getElementById('statusIndicator');
+  const statusText = document.getElementById('statusText');
+  const statusDetails = document.getElementById('statusDetails');
+
+  const outageCountEl = document.getElementById('outageCount');
+  const lastOutageEl = document.getElementById('lastOutage');
+  const currentDurationEl = document.getElementById('currentDuration');
+
+  let timer = null;
+
+  // null = ещё не было проверки
+  // true = интернет есть
+  // false = интернет отсутствует
+  let lastStatus = null;
+
+  let statusSince = null;
+  let outageStartedAt = null;
+
+  let outageCount = 0;
+  let lastOutageTime = null;
+
+  let events = [];
+
+
+  function now() {
+    return new Date().toLocaleString();
+  }
+
+
+  function timeOnly(date) {
+    return date.toLocaleTimeString();
+  }
+
+
+  function appendLog(text) {
+
+    events.push(text);
+
+    logEl.textContent += text + '\n';
+
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+
+  function formatDuration(ms) {
+
+    if (ms < 1000) {
+      return '0 сек.';
+    }
+
+    const totalSeconds = Math.floor(ms / 1000);
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const parts = [];
+
+    if (hours > 0) {
+      parts.push(hours + ' ч.');
+    }
+
+    if (minutes > 0) {
+      parts.push(minutes + ' мин.');
+    }
+
+    if (seconds > 0 || parts.length === 0) {
+      parts.push(seconds + ' сек.');
+    }
+
+    return parts.join(' ');
+  }
+
+
+  function updateStatusUI(status) {
+
+    statusBox.classList.remove('online', 'offline', 'unknown');
+
+    if (status === true) {
+
+      statusBox.classList.add('online');
+
+      statusIndicator.textContent = '🟢';
+      statusText.textContent = 'Интернет работает';
+
+    } else if (status === false) {
+
+      statusBox.classList.add('offline');
+
+      statusIndicator.textContent = '🔴';
+      statusText.textContent = 'Интернет отсутствует';
+
+    } else {
+
+      statusBox.classList.add('unknown');
+
+      statusIndicator.textContent = '⚪';
+      statusText.textContent = 'Не проверяется';
+    }
+  }
+
+
+  function updateDuration() {
+
+    if (statusSince === null) {
+      currentDurationEl.textContent = '—';
+      return;
+    }
+
+    currentDurationEl.textContent =
+      formatDuration(Date.now() - statusSince);
+  }
+
+
+  function updateStats() {
+
+    outageCountEl.textContent = outageCount;
+
+    if (lastOutageTime) {
+      lastOutageEl.textContent = timeOnly(lastOutageTime);
+    } else {
+      lastOutageEl.textContent = '—';
+    }
+
+    updateDuration();
+  }
+
+
+  async function checkOnce() {
+
+    const u = urlInput.value.trim();
+
+    if (!u) {
+      handleStatus(false);
+      return;
+    }
+
+    let controller;
+    let timeout;
+
+    try {
+
+      controller = new AbortController();
+
+      timeout = setTimeout(function () {
+        controller.abort();
+      }, 4000);
+
+
+      /*
+       * no-cors позволяет выполнить сетевой запрос даже к ресурсу,
+       * который не разрешает CORS.
+       *
+       * Для определения доступности Интернета нам важно,
+       * что запрос вообще удалось выполнить.
+       */
+
+      await fetch(u, {
+        method: 'GET',
+        mode: 'no-cors',
+        cache: 'no-store',
+        signal: controller.signal
+      });
+
+
+      clearTimeout(timeout);
+
+      handleStatus(true);
+
+    } catch (error) {
+
+      clearTimeout(timeout);
+
+      handleStatus(false);
+    }
+  }
+
+
+  function handleStatus(isOnline) {
+
+    const currentTime = new Date();
+
+    /*
+     * Первая проверка.
+     */
+
+    if (lastStatus === null) {
+
+      lastStatus = isOnline;
+      statusSince = currentTime;
+
+      updateStatusUI(isOnline);
+
+      statusDetails.textContent =
+        'Проверка начата: ' + timeOnly(currentTime);
+
+      appendLog(
+        '[' + now() + '] Стартовый статус: ' +
+        (isOnline ? 'ИНТЕРНЕТ ДОСТУПЕН' : 'ИНТЕРНЕТ ОТСУТСТВУЕТ')
+      );
+
+      updateStats();
+
+      return;
+    }
+
+
+    /*
+     * Состояние не изменилось.
+     */
+
+    if (isOnline === lastStatus) {
+
+      updateDuration();
+
+      return;
+    }
+
+
+    /*
+     * Состояние изменилось.
+     */
+
+    const previousStatus = lastStatus;
+
+    lastStatus = isOnline;
+
+    statusSince = currentTime;
+
+    updateStatusUI(isOnline);
+
+
+    /*
+     * Интернет пропал.
+     */
+
+    if (previousStatus === true && isOnline === false) {
+
+      outageStartedAt = currentTime;
+
+      outageCount++;
+
+      statusDetails.textContent =
+        'Соединение потеряно: ' + timeOnly(currentTime);
+
+      appendLog(
+        '[' + now() + '] СМЕНА: ИНТЕРНЕТ ОТКЛЮЧЁН'
+      );
+
+      lastOutageTime = currentTime;
+    }
+
+
+    /*
+     * Интернет восстановился.
+     */
+
+    if (previousStatus === false && isOnline === true) {
+
+      let duration = 'неизвестно';
+
+      if (outageStartedAt) {
+        duration = formatDuration(
+          currentTime - outageStartedAt
+        );
+      }
+
+      statusDetails.textContent =
+        'Соединение восстановлено: ' + timeOnly(currentTime);
+
+      appendLog(
+        '[' + now() +
+        '] СМЕНА: ИНТЕРНЕТ ПОДКЛЮЧЁН' +
+        ' (отключение длилось ' + duration + ')'
+      );
+
+      outageStartedAt = null;
+    }
+
+
+    updateStats();
+  }
+
+
+  function start() {
+
+    if (timer) {
+      return;
+    }
+
+    const interval =
+      Math.max(
+        1,
+        Math.min(
+          3600,
+          parseInt(intervalInput.value, 10) || 5
+        )
+      );
+
+
+    /*
+     * Если URL невалидный — сообщаем пользователю.
+     */
+
+    try {
+      new URL(urlInput.value);
+    } catch (error) {
+
+      alert('Введите корректный URL.');
+
+      return;
+    }
+
+
+    appendLog(
+      '[' + now() +
+      '] Монитор запущен (интервал ' +
+      interval + ' сек.)'
+    );
+
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+
+    urlInput.disabled = true;
+    intervalInput.disabled = true;
+
+
+    /*
+     * Немедленная проверка.
+     */
+
+    checkOnce();
+
+
+    /*
+     * Периодические проверки.
+     */
+
+    timer = setInterval(
+      checkOnce,
+      interval * 1000
+    );
+  }
+
+
+  function stop() {
+
+    if (!timer) {
+      return;
+    }
+
+    clearInterval(timer);
+
+    timer = null;
+
+    appendLog(
+      '[' + now() + '] Монитор остановлен'
+    );
+
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+
+    urlInput.disabled = false;
+    intervalInput.disabled = false;
+
+    statusDetails.textContent =
+      'Мониторинг остановлен';
+
+    updateStatusUI(null);
+  }
+
+
+  clearBtn.onclick = function () {
+
+    if (
+      events.length > 0 &&
+      !confirm('Очистить журнал событий?')
+    ) {
+      return;
+    }
+
+    events = [];
+
+    logEl.textContent = '';
+
+    outageCount = 0;
+    lastOutageTime = null;
+
+    outageCountEl.textContent = '0';
+    lastOutageEl.textContent = '—';
+  };
+
+
+  exportBtn.onclick = function () {
+
+    if (events.length === 0) {
+      alert('Журнал пуст.');
+      return;
+    }
+
+    const blob = new Blob(
+      [events.join('\n')],
+      {
+        type: 'text/plain;charset=utf-8'
+      }
+    );
+
+    const downloadUrl =
+      URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+
+    const date =
+      new Date()
+        .toISOString()
+        .slice(0, 10);
+
+    a.href = downloadUrl;
+
+    a.download =
+      'internet-log-' + date + '.txt';
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    setTimeout(function () {
+
+      URL.revokeObjectURL(downloadUrl);
+
+      a.remove();
+
+    }, 500);
+  };
+
+
+  startBtn.onclick = start;
+  stopBtn.onclick = stop;
+
+
+  /*
+   * Обновляем длительность текущего состояния
+   * каждую секунду.
+   */
+
+  setInterval(function () {
+
+    if (timer) {
+      updateDuration();
+    }
+
+  }, 1000);
+
+})();
+</script>
+
+</body>
+</html>
