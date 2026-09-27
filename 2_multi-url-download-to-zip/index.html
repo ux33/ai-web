@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi URL Download to ZIP</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.7.57/dist/zip.min.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+textarea {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 15px;
+}
+
+#urls {
+    height: 180px;
+}
+
+.log {
+    height: 150px;
+}
+
+input {
+    width: 80px;
+}
+
+button {
+    padding: 10px 20px;
+    margin-right: 10px;
+    cursor: pointer;
+}
+
+.info {
+    margin: 15px 0;
+    padding: 10px;
+    background: #f2f2f2;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Multi URL Download to ZIP</h2>
+<p>Скачивайте сразу несколько файлов по списку URL и автоматически упаковывайте их в один ZIP-архив.</p>
+
+<textarea id="urls" placeholder="https://site.com/image1.jpg
+https://site.com/image2.jpg"></textarea>
+
+<label>
+Одновременных загрузок:
+<input id="threads" type="number" value="50" min="1" max="500">
+</label>
+
+<br><br>
+
+<button onclick="start()">Скачать ZIP</button>
+<button onclick="stop()">Остановить</button>
+
+<div class="info">
+<div id="status">Готов</div>
+<div id="speed"></div>
+<div id="size"></div>
+</div>
+
+<h3>Успешно:</h3>
+<textarea id="success" class="log"></textarea>
+
+<h3>Ошибки:</h3>
+<textarea id="failed" class="log"></textarea>
+
+
+<script>
+
+let stopped = false;
+
+let successBox = document.getElementById("success");
+let failedBox = document.getElementById("failed");
+
+function stop(){
+    stopped = true;
+}
+
+
+function filenameFromUrl(url){
+
+    try{
+        let name = new URL(url).pathname.split("/").pop();
+
+        if(!name)
+            name="file_"+Date.now();
+
+        return name;
+
+    }catch{
+        return "file_"+Date.now();
+    }
+}
+
+
+async function start(){
+
+    stopped=false;
+
+    successBox.value="";
+    failedBox.value="";
+
+    let urls=document
+        .getElementById("urls")
+        .value
+        .split("\n")
+        .map(x=>x.trim())
+        .filter(Boolean);
+
+
+    if(!urls.length){
+        alert("Нет ссылок");
+        return;
+    }
+
+
+    let threads=parseInt(
+        document.getElementById("threads").value
+    ) || 50;
+
+
+    let writer = new zip.ZipWriter(
+        new zip.BlobWriter("application/zip"),
+        {
+            zip64:true
+        }
+    );
+
+
+    let index=0;
+    let done=0;
+    let totalBytes=0;
+
+    let names={};
+
+
+    let startTime=Date.now();
+
+
+
+    async function worker(){
+
+
+        while(index < urls.length && !stopped){
+
+            let url=urls[index++];
+            
+
+            try{
+
+                let response=await fetch(url);
+
+
+                if(!response.ok)
+                    throw new Error(
+                        "HTTP "+response.status
+                    );
+
+
+                let blob=await response.blob();
+
+
+                let name=filenameFromUrl(url);
+
+
+                if(names[name]){
+                    names[name]++;
+
+                    let parts=name.split(".");
+
+                    if(parts.length>1){
+
+                        let ext=parts.pop();
+
+                        name=
+                        parts.join(".")
+                        +" ("+
+                        names[name]+
+                        ")."
+                        +ext;
+
+                    }else{
+
+                        name+=" ("+names[name]+")";
+
+                    }
+
+                }else{
+
+                    names[name]=1;
+
+                }
+
+
+                await writer.add(
+                    name,
+                    new zip.BlobReader(blob),
+                    {
+                        level:0
+                    }
+                );
+
+
+                totalBytes+=blob.size;
+
+
+                successBox.value+=url+"\n";
+
+
+            }catch(e){
+
+                failedBox.value+=
+                    url+
+                    " : "+
+                    e.message+
+                    "\n";
+
+            }
+
+
+            done++;
+
+
+            update(
+                done,
+                urls.length,
+                totalBytes,
+                startTime
+            );
+        }
+    }
+
+
+    let workers=[];
+
+    for(let i=0;i<Math.min(threads,urls.length);i++){
+        workers.push(worker());
+    }
+
+
+    await Promise.all(workers);
+
+
+    if(stopped){
+
+        document.getElementById("status")
+        .innerHTML="Остановлено";
+
+        return;
+    }
+
+
+    document.getElementById("status")
+    .innerHTML="Создание ZIP...";
+
+
+    let blob=await writer.close();
+
+
+    let a=document.createElement("a");
+
+    a.href=URL.createObjectURL(blob);
+
+    a.download="files.zip";
+
+    a.click();
+
+
+    document.getElementById("status")
+    .innerHTML="Готово";
+
+}
+
+function update(done,total,bytes,startTime){
+
+    let seconds=
+        (Date.now()-startTime)/1000;
+
+
+    let speed=
+        seconds>0
+        ? bytes/seconds
+        : 0;
+
+
+    document.getElementById("status")
+    .innerHTML=
+        "Файлы: "+
+        done+
+        " / "+
+        total;
+
+
+    document.getElementById("speed")
+    .innerHTML=
+        "Скорость: "+
+        formatBytes(speed)+
+        "/с";
+
+
+    document.getElementById("size")
+    .innerHTML=
+        "Скачано: "+
+        formatBytes(bytes);
+
+}
+
+
+
+function formatBytes(bytes){
+
+    if(bytes===0)
+        return "0 B";
+
+
+    let units=[
+        "B",
+        "KB",
+        "MB",
+        "GB",
+        "TB"
+    ];
+
+
+    let i=Math.floor(
+        Math.log(bytes)/
+        Math.log(1024)
+    );
+
+
+    return (
+        bytes /
+        Math.pow(1024,i)
+    )
+    .toFixed(2)
+    +" "
+    +units[i];
+
+}
+
+
+</script>
+
+</body>
+</html>
