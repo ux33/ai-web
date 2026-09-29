@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Repository Viewer</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/typescript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/php.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/java.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/c.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cpp.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/csharp.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/rust.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/markdown.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.12/lib/marked.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+:root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --blue: #58a6ff;
+    --green: #238636;
+    --red: #f85149;
+    --yellow: #d29922;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.top {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+}
+
+.top h1 {
+    margin: 0 0 5px;
+    font-size: 21px;
+}
+
+.top p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.mode-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px 0;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+}
+
+.mode-tab {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: 6px 6px 0 0;
+    padding: 9px 14px;
+}
+
+.mode-tab:hover {
+    color: var(--text);
+}
+
+.mode-tab.active {
+    color: var(--text);
+    background: var(--bg);
+    border-color: var(--border);
+}
+
+.controls {
+    padding: 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    display: grid;
+    grid-template-columns: 2fr 1fr auto;
+    gap: 8px;
+}
+
+.controls.public {
+    grid-template-columns: 2fr auto;
+}
+
+input,
+select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 11px;
+    outline: 0;
+}
+
+input:focus,
+select:focus {
+    border-color: var(--blue);
+}
+
+button.primary {
+    background: var(--green);
+    border: 0;
+    color: #fff;
+    border-radius: 6px;
+    padding: 9px 15px;
+    font-weight: 600;
+}
+
+button.secondary {
+    background: #21262d;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 11px;
+}
+
+button.secondary:hover {
+    background: #30363d;
+}
+
+.status {
+    padding: 9px 14px;
+    color: var(--muted);
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+}
+
+.status.ok {
+    color: #3fb950;
+}
+
+.status.err {
+    color: var(--red);
+}
+
+.app {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: calc(100vh - 205px);
+    min-height: 500px;
+}
+
+.sidebar {
+    border-right: 1px solid var(--border);
+    overflow: auto;
+    background: var(--panel);
+}
+
+.sidebar-head {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    z-index: 2;
+}
+
+.repo-list {
+    padding: 7px;
+}
+
+.repo {
+    padding: 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 2px;
+}
+
+.repo:hover {
+    background: var(--panel2);
+}
+
+.repo.active {
+    background: #1f6feb;
+}
+
+.repo-name {
+    font-weight: 600;
+}
+
+.repo-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 3px;
+}
+
+.repo.active .repo-meta {
+    color: #dbeafe;
+}
+
+.main {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+}
+
+.files {
+    border-right: 1px solid var(--border);
+    overflow: auto;
+    background: #11161d;
+}
+
+.files-head {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: #11161d;
+    z-index: 2;
+}
+
+.file {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file:hover {
+    background: var(--panel2);
+}
+
+.file.active {
+    background: #1f6feb;
+}
+
+.folder {
+    font-weight: 600;
+}
+
+.viewer {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.viewer-head {
+    min-height: 48px;
+    padding: 8px 10px 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.path-wrap {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.viewer-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.view-switch {
+    display: none;
+    gap: 4px;
+}
+
+.view-switch.visible {
+    display: flex;
+}
+
+.view-switch button.active {
+    background: #1f6feb;
+    border-color: #1f6feb;
+}
+
+.content {
+    flex: 1;
+    overflow: auto;
+}
+
+.content pre {
+    margin: 0;
+    padding: 18px;
+    font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+    white-space: pre;
+    min-width: max-content;
+}
+
+.code-view {
+    min-width: max-content;
+}
+
+.code-view pre {
+    min-width: 100%;
+    padding: 18px;
+}
+
+.code-view code {
+    font: inherit;
+}
+
+.raw-fallback {
+    color: var(--muted);
+    padding: 18px;
+}
+
+.placeholder {
+    height: 100%;
+    min-height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    text-align: center;
+    padding: 30px;
+}
+
+.badge {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.preview-wrap {
+    padding: 24px;
+}
+
+.preview-image {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 300px);
+    margin: 0 auto;
+    object-fit: contain;
+}
+
+.media-player {
+    display: block;
+    width: min(100%, 900px);
+    margin: 50px auto;
+}
+
+.html-preview {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 260px);
+    min-height: 500px;
+    border: 0;
+    background: #fff;
+}
+
+.markdown-body {
+    max-width: 1012px;
+    margin: 0 auto;
+    padding: 32px;
+    line-height: 1.5;
+    color: #e6edf3;
+}
+
+.markdown-body h1,
+.markdown-body h2 {
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--border);
+}
+
+.markdown-body h1 {
+    font-size: 2em;
+}
+
+.markdown-body h2 {
+    font-size: 1.5em;
+}
+
+.markdown-body h3 {
+    font-size: 1.25em;
+}
+
+.markdown-body a {
+    color: #58a6ff;
+}
+
+.markdown-body blockquote {
+    margin: 0 0 16px;
+    padding: 0 1em;
+    color: var(--muted);
+    border-left: 0.25em solid var(--border);
+}
+
+.markdown-body table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow: auto;
+    border-spacing: 0;
+    border-collapse: collapse;
+}
+
+.markdown-body th,
+.markdown-body td {
+    padding: 6px 13px;
+    border: 1px solid var(--border);
+}
+
+.markdown-body th {
+    font-weight: 600;
+    background: var(--panel2);
+}
+
+.markdown-body code {
+    padding: 0.2em 0.4em;
+    font: 85% ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: rgba(110, 118, 129, 0.2);
+    border-radius: 6px;
+}
+
+.markdown-body pre {
+    padding: 16px;
+    overflow: auto;
+    border-radius: 6px;
+    background: #161b22;
+}
+
+.markdown-body pre code {
+    padding: 0;
+    background: transparent;
+}
+
+.markdown-body img {
+    max-width: 100%;
+}
+
+.markdown-body hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+}
+
+.download-menu {
+    position: relative;
+}
+
+.download-menu-content {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    min-width: 210px;
+    padding: 5px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    z-index: 20;
+}
+
+.download-menu.open .download-menu-content {
+    display: block;
+}
+
+.download-menu-content button {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 5px;
+}
+
+.download-menu-content button:hover {
+    background: var(--panel2);
+}
+
+.folder-download {
+    margin: 8px 10px;
+    width: calc(100% - 20px);
+}
+
+@media (max-width: 900px) {
+    .controls,
+    .controls.public {
+        grid-template-columns: 1fr;
+    }
+
+    .app {
+        grid-template-columns: 220px 1fr;
+    }
+
+    .main {
+        grid-template-columns: 220px 1fr;
+    }
+}
+
+@media (max-width: 650px) {
+    .app {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .sidebar {
+        height: 280px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .main {
+        grid-template-columns: 1fr;
+    }
+
+    .files {
+        height: 330px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .viewer {
+        height: 600px;
+    }
+
+    .viewer-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .viewer-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+}
+</style>
+</head>
+
+<body>
+<header class="top">
+    <h1>GitHub Repository Viewer</h1>
+    <p>Универсальный просмотрщик приватных и публичных репозиториев</p>
+</header>
+
+<div class="mode-tabs">
+    <button id="tokenMode" class="mode-tab active">GitHub Token</button>
+    <button id="publicMode" class="mode-tab">Публичный профиль</button>
+</div>
+
+<section id="tokenControls" class="controls">
+    <input id="token" type="password" placeholder="GitHub token (github_pat_...)" autocomplete="off">
+    <select id="repoSelect" disabled>
+        <option>Сначала подключись</option>
+    </select>
+    <button id="connect" class="primary">Подключиться</button>
+</section>
+
+<section id="publicControls" class="controls public" style="display: none;">
+    <input id="profileUrl" type="url" placeholder="https://github.com/username" autocomplete="off">
+    <button id="connectPublic" class="primary">Открыть профиль</button>
+</section>
+
+<div id="status" class="status">Токен используется только в текущей вкладке и не сохраняется.</div>
+
+<div class="app">
+    <aside class="sidebar">
+        <div class="sidebar-head">
+            <input id="repoSearch" placeholder="Поиск репозитория..." disabled>
+        </div>
+        <div id="repos" class="repo-list">
+            <div class="placeholder" style="height: 150px;">Введи токен или URL публичного профиля</div>
+        </div>
+    </aside>
+
+    <section class="main">
+        <div class="files">
+            <div class="files-head">
+                <input id="fileSearch" placeholder="Поиск файлов..." disabled>
+                <button id="downloadFolder" class="secondary folder-download" disabled>Скачать папку ZIP Store</button>
+            </div>
+            <div id="tree"></div>
+        </div>
+
+        <div class="viewer">
+            <div class="viewer-head">
+                <div class="path-wrap">
+                    <div id="path" class="path">Файл не выбран</div>
+                    <div id="size" class="badge"></div>
+                </div>
+
+                <div class="viewer-actions">
+                    <div id="viewSwitch" class="view-switch">
+                        <button id="rawButton" class="secondary active">RAW</button>
+                        <button id="previewButton" class="secondary">Preview</button>
+                    </div>
+
+                    <div class="download-menu" id="downloadMenu">
+                        <button id="downloadButton" class="secondary" disabled>Скачать</button>
+                        <div class="download-menu-content">
+                            <button id="downloadFileButton">Скачать файл</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="content" class="content">
+                <div class="placeholder">Выбери репозиторий и файл</div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+const API = "https://api.github.com";
+
+let token = "";
+let authMode = "token";
+let repos = [];
+let currentRepo = null;
+let currentBranch = "";
+let tree = [];
+let flatFiles = [];
+let currentFile = null;
+let currentFileText = "";
+let currentFileRawUrl = "";
+let currentView = "raw";
+let currentPreviewSupported = false;
+
+const $ = id => document.getElementById(id);
+
+function setStatus(text, type = "") {
+    $("status").textContent = text;
+    $("status").className = "status " + type;
+}
+
+function setMode(mode) {
+    authMode = mode;
+
+    const tokenMode = mode === "token";
+
+    $("tokenMode").classList.toggle("active", tokenMode);
+    $("publicMode").classList.toggle("active", !tokenMode);
+    $("tokenControls").style.display = tokenMode ? "grid" : "none";
+    $("publicControls").style.display = tokenMode ? "none" : "grid";
+
+    token = "";
+    repos = [];
+    currentRepo = null;
+    currentBranch = "";
+    tree = [];
+    flatFiles = [];
+    currentFile = null;
+    currentFileText = "";
+    currentFileRawUrl = "";
+    currentPreviewSupported = false;
+
+    $("repoSearch").disabled = true;
+    $("fileSearch").disabled = true;
+    $("repoSelect").disabled = true;
+    $("downloadFolder").disabled = true;
+    $("downloadButton").disabled = true;
+    $("viewSwitch").classList.remove("visible");
+    $("content").innerHTML = '<div class="placeholder">Введи данные подключения</div>';
+    $("tree").innerHTML = "";
+    $("repos").innerHTML = '<div class="placeholder" style="height: 150px;">Введи данные подключения</div>';
+    $("path").textContent = "Файл не выбран";
+    $("size").textContent = "";
+
+    if (tokenMode) {
+        setStatus("Токен используется только в текущей вкладке и не сохраняется.");
+    } else {
+        setStatus("Укажи URL публичного GitHub-профиля.");
+    }
+}
+
+async function api(path, options = {}) {
+    const headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(options.headers || {})
+    };
+
+    if (token) {
+        headers.Authorization = "Bearer " + token;
+    }
+
+    const response = await fetch(API + path, {
+        ...options,
+        headers
+    });
+
+    let data = null;
+
+    try {
+        data = await response.json();
+    } catch {
+        data = null;
+    }
+
+    if (!response.ok) {
+        throw new Error(data?.message || `HTTP ${response.status}`);
+    }
+
+    return data;
+}
+
+$("tokenMode").onclick = () => setMode("token");
+$("publicMode").onclick = () => setMode("public");
+
+$("connect").onclick = connectWithToken;
+$("connectPublic").onclick = connectPublicProfile;
+
+$("token").addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+        connectWithToken();
+    }
+});
+
+$("profileUrl").addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+        connectPublicProfile();
+    }
+});
+
+$("repoSearch").addEventListener("input", renderRepos);
+$("fileSearch").addEventListener("input", () => renderTree($("fileSearch").value));
+$("rawButton").onclick = () => showCurrentView("raw");
+$("previewButton").onclick = () => showCurrentView("preview");
+$("downloadButton").onclick = toggleDownloadMenu;
+$("downloadFileButton").onclick = downloadCurrentFile;
+$("downloadFolder").onclick = downloadCurrentFolder;
+
+document.addEventListener("click", event => {
+    if (!$("downloadMenu").contains(event.target)) {
+        $("downloadMenu").classList.remove("open");
+    }
+});
+
+async function connectWithToken() {
+    const value = $("token").value.trim();
+
+    if (!value) {
+        setStatus("Вставь GitHub token.", "err");
+        return;
+    }
+
+    token = value;
+    $("connect").disabled = true;
+    setStatus("Проверяем токен...");
+
+    try {
+        const user = await api("/user");
+
+        setStatus(`Авторизован как ${user.login}. Загружаем репозитории...`);
+        repos = [];
+
+        for (let page = 1; ; page++) {
+            const batch = await api(`/user/repos?per_page=100&page=${page}&sort=updated`);
+            repos.push(...batch);
+
+            if (batch.length < 100) {
+                break;
+            }
+        }
+
+        enableRepositoryInterface();
+        renderRepos();
+        fillRepoSelect();
+
+        if (repos.length) {
+            await selectRepo(repos[0]);
+        }
+
+        setStatus(`Готово. Найдено репозиториев: ${repos.length}`, "ok");
+    } catch (error) {
+        token = "";
+        setStatus("Ошибка: " + error.message, "err");
+        $("repos").innerHTML = '<div class="placeholder" style="height: 150px;">Не удалось загрузить репозитории</div>';
+    } finally {
+        $("connect").disabled = false;
+    }
+}
+
+async function connectPublicProfile() {
+    const value = $("profileUrl").value.trim();
+    const username = extractGitHubUsername(value);
+
+    if (!username) {
+        setStatus("Укажи URL вида https://github.com/username.", "err");
+        return;
+    }
+
+    token = "";
+    $("connectPublic").disabled = true;
+    setStatus(`Загружаем публичные репозитории ${username}...`);
+
+    try {
+        repos = [];
+
+        for (let page = 1; ; page++) {
+            const batch = await api(`/users/${encodeURIComponent(username)}/repos?type=all&per_page=100&page=${page}&sort=updated`);
+            repos.push(...batch.filter(repo => !repo.private));
+
+            if (batch.length < 100) {
+                break;
+            }
+        }
+
+        enableRepositoryInterface();
+        renderRepos();
+        fillRepoSelect();
+
+        if (repos.length) {
+            await selectRepo(repos[0]);
+        }
+
+        setStatus(`Профиль ${username}: найдено публичных репозиториев: ${repos.length}`, "ok");
+    } catch (error) {
+        setStatus("Ошибка: " + error.message, "err");
+        $("repos").innerHTML = '<div class="placeholder" style="height: 150px;">Не удалось загрузить профиль</div>';
+    } finally {
+        $("connectPublic").disabled = false;
+    }
+}
+
+function extractGitHubUsername(value) {
+    try {
+        const url = new URL(value);
+
+        if (url.hostname.toLowerCase() !== "github.com") {
+            return "";
+        }
+
+        const parts = url.pathname.split("/").filter(Boolean);
+
+        if (parts.length !== 1) {
+            return "";
+        }
+
+        return parts[0];
+    } catch {
+        return "";
+    }
+}
+
+function enableRepositoryInterface() {
+    $("repoSearch").disabled = false;
+    $("repoSelect").disabled = false;
+}
+
+function fillRepoSelect() {
+    $("repoSelect").innerHTML = repos.map((repo, index) => {
+        const icon = repo.private ? "🔒" : "🌐";
+        return `<option value="${index}">${icon} ${escapeHtml(repo.full_name)}</option>`;
+    }).join("");
+
+    $("repoSelect").onchange = () => selectRepo(repos[+$(
+        "repoSelect"
+    ).value]);
+}
+
+function renderRepos() {
+    const query = $("repoSearch").value.toLowerCase().trim();
+
+    const list = repos.filter(repo => {
+        return (repo.full_name + " " + (repo.description || ""))
+            .toLowerCase()
+            .includes(query);
+    });
+
+    $("repos").innerHTML = list.length
+        ? list.map(repo => `
+            <div class="repo ${currentRepo?.id === repo.id ? "active" : ""}" data-id="${repo.id}">
+                <div class="repo-name">${repo.private ? "🔒" : "🌐"} ${escapeHtml(repo.full_name)}</div>
+                <div class="repo-meta">${escapeHtml(repo.description || "Без описания")}</div>
+            </div>
+        `).join("")
+        : '<div class="placeholder" style="height: 150px;">Ничего не найдено</div>';
+
+    $("repos").querySelectorAll(".repo").forEach(element => {
+        element.onclick = () => selectRepo(repos.find(repo => repo.id == element.dataset.id));
+    });
+}
+
+async function selectRepo(repo) {
+    if (!repo) {
+        return;
+    }
+
+    currentRepo = repo;
+    $("repoSelect").value = repos.indexOf(repo);
+    renderRepos();
+
+    $("tree").innerHTML = '<div class="placeholder">Загрузка файлов...</div>';
+    $("fileSearch").disabled = true;
+    $("downloadFolder").disabled = true;
+    $("content").innerHTML = '<div class="placeholder">Загрузка репозитория...</div>';
+
+    try {
+        const full = await api(`/repos/${encodeURIComponent(repo.owner.login)}/${encodeURIComponent(repo.name)}`);
+        currentBranch = full.default_branch;
+
+        const data = await api(
+            `/repos/${encodeURIComponent(repo.owner.login)}/${encodeURIComponent(repo.name)}/git/trees/${encodeURIComponent(currentBranch)}?recursive=1`
+        );
+
+        tree = data.tree || [];
+        flatFiles = tree.filter(item => item.type === "blob");
+
+        $("fileSearch").disabled = false;
+        $("downloadFolder").disabled = false;
+
+        renderTree();
+
+        $("content").innerHTML = `
+            <div class="placeholder">
+                ${escapeHtml(repo.full_name)}<br><br>
+                Ветка: ${escapeHtml(currentBranch)}<br>
+                Файлов: ${flatFiles.length}
+            </div>
+        `;
+
+        setStatus(
+            `${repo.full_name} • ${currentBranch} • ${flatFiles.length} файлов`,
+            "ok"
+        );
+    } catch (error) {
+        $("tree").innerHTML = `<div class="placeholder">${escapeHtml(error.message)}</div>`;
+        setStatus("Ошибка загрузки репозитория: " + error.message, "err");
+    }
+}
+
+function renderTree(query = "") {
+    const normalizedQuery = query.toLowerCase().trim();
+    const files = flatFiles.filter(item => {
+        return !normalizedQuery || item.path.toLowerCase().includes(normalizedQuery);
+    });
+
+    const root = {};
+
+    for (const item of files) {
+        const parts = item.path.split("/");
+        let node = root;
+
+        parts.forEach((part, index) => {
+            node[part] ??= {
+                __item: null,
+                __children: {}
+            };
+
+            if (index === parts.length - 1) {
+                node[part].__item = item;
+            } else {
+                node = node[part].__children;
+            }
+        });
+    }
+
+    $("tree").innerHTML = "";
+    renderNodes(root, $("tree"), 0, "");
+
+    if (!files.length) {
+        $("tree").innerHTML = '<div class="placeholder" style="height: 150px;">Файлы не найдены</div>';
+    }
+}
+
+function renderNodes(nodes, container, depth, parentPath) {
+    const names = Object.keys(nodes).sort((a, b) => {
+        const aFolder = Object.keys(nodes[a].__children).length > 0;
+        const bFolder = Object.keys(nodes[b].__children).length > 0;
+
+        if (aFolder !== bFolder) {
+            return bFolder - aFolder;
+        }
+
+        return a.localeCompare(b);
+    });
+
+    for (const name of names) {
+        const node = nodes[name];
+        const folder = Object.keys(node.__children).length > 0;
+        const fullPath = parentPath ? `${parentPath}/${name}` : name;
+        const element = document.createElement("div");
+
+        element.className = "file " + (folder ? "folder" : "");
+        element.style.paddingLeft = 10 + depth * 18 + "px";
+        element.textContent = (folder ? "📁 " : getIcon(name) + " ") + name;
+
+        if (folder) {
+            const wrap = document.createElement("div");
+            wrap.style.display = "none";
+
+            element.onclick = event => {
+                event.stopPropagation();
+                const open = wrap.style.display !== "none";
+                wrap.style.display = open ? "none" : "block";
+                element.textContent = (open ? "📁 " : "📂 ") + name;
+            };
+
+            element.oncontextmenu = event => {
+                event.preventDefault();
+                downloadFolder(fullPath);
+            };
+
+            container.appendChild(element);
+            renderNodes(node.__children, wrap, depth + 1, fullPath);
+            container.appendChild(wrap);
+        } else {
+            element.onclick = () => openFile(node.__item, element);
+            container.appendChild(element);
+        }
+    }
+}
+
+async function openFile(item, element) {
+    document.querySelectorAll(".file.active").forEach(node => node.classList.remove("active"));
+    element.classList.add("active");
+
+    currentFile = item;
+    currentFileText = "";
+    currentFileRawUrl = buildRawUrl(item.path);
+    currentPreviewSupported = isPreviewSupported(item.path);
+    currentView = "raw";
+
+    $("path").textContent = item.path;
+    $("size").textContent = formatBytes(item.size || 0);
+    $("downloadButton").disabled = false;
+
+    updateViewSwitch();
+    $("content").innerHTML = '<div class="placeholder">Загрузка...</div>';
+
+    try {
+        const data = await api(
+            `/repos/${encodeURIComponent(currentRepo.owner.login)}/${encodeURIComponent(currentRepo.name)}/contents/${item.path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(currentBranch)}`
+        );
+
+        if (data.type !== "file") {
+            throw new Error("GitHub вернул не файл");
+        }
+
+        currentFileText = decodeBase64(data.content || "");
+        renderRaw();
+    } catch (error) {
+        $("content").innerHTML = `<div class="placeholder">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function updateViewSwitch() {
+    const switcher = $("viewSwitch");
+    switcher.classList.toggle("visible", currentPreviewSupported);
+
+    $("rawButton").classList.toggle("active", currentView === "raw");
+    $("previewButton").classList.toggle("active", currentView === "preview");
+}
+
+function showCurrentView(view) {
+    if (!currentFile) {
+        return;
+    }
+
+    if (view === "preview" && !currentPreviewSupported) {
+        return;
+    }
+
+    currentView = view;
+    updateViewSwitch();
+
+    if (view === "preview") {
+        renderPreview();
+    } else {
+        renderRaw();
+    }
+}
+
+function renderRaw() {
+    const language = detectLanguage(currentFile.path);
+    const content = $("content");
+    const wrapper = document.createElement("div");
+
+    wrapper.className = "code-view";
+
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+
+    if (language) {
+        code.className = "language-" + language;
+        code.textContent = currentFileText;
+        pre.appendChild(code);
+        wrapper.appendChild(pre);
+        content.innerHTML = "";
+        content.appendChild(wrapper);
+
+        try {
+            hljs.highlightElement(code);
+        } catch {
+            code.textContent = currentFileText;
+        }
+    } else {
+        pre.textContent = currentFileText;
+        wrapper.appendChild(pre);
+        content.innerHTML = "";
+        content.appendChild(wrapper);
+    }
+}
+
+function renderPreview() {
+    const type = getPreviewType(currentFile.path);
+    const content = $("content");
+
+    if (type === "image") {
+        content.innerHTML = `
+            <div class="preview-wrap">
+                <img class="preview-image" src="${escapeAttribute(currentFileRawUrl)}" alt="${escapeAttribute(currentFile.path)}">
+            </div>
+        `;
+        return;
+    }
+
+    if (type === "video") {
+        content.innerHTML = `
+            <div class="preview-wrap">
+                <video class="media-player" controls src="${escapeAttribute(currentFileRawUrl)}"></video>
+            </div>
+        `;
+        return;
+    }
+
+    if (type === "audio") {
+        content.innerHTML = `
+            <div class="preview-wrap">
+                <audio class="media-player" controls src="${escapeAttribute(currentFileRawUrl)}"></audio>
+            </div>
+        `;
+        return;
+    }
+
+    if (type === "html") {
+        const iframe = document.createElement("iframe");
+        iframe.className = "html-preview";
+        iframe.setAttribute("sandbox", "allow-scripts allow-forms allow-modals");
+        iframe.srcdoc = currentFileText;
+        content.innerHTML = "";
+        content.appendChild(iframe);
+        return;
+    }
+
+    if (type === "markdown") {
+        const markdown = marked.parse(currentFileText, {
+            gfm: true,
+            breaks: false
+        });
+
+        const safeHtml = DOMPurify.sanitize(markdown, {
+            USE_PROFILES: {
+                html: true
+            }
+        });
+
+        content.innerHTML = `<article class="markdown-body">${safeHtml}</article>`;
+
+        content.querySelectorAll("pre code").forEach(code => {
+            try {
+                hljs.highlightElement(code);
+            } catch {
+                // Markdown code block stays readable even if highlighting is unavailable.
+            }
+        });
+    }
+}
+
+function isPreviewSupported(path) {
+    return Boolean(getPreviewType(path));
+}
+
+function getPreviewType(path) {
+    const extension = getExtension(path);
+
+    if ([
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "ico"
+    ].includes(extension)) {
+        return "image";
+    }
+
+    if (["mp4", "webm", "ogg", "mov", "m4v"].includes(extension)) {
+        return "video";
+    }
+
+    if (["mp3", "wav", "ogg", "m4a", "aac", "flac"].includes(extension)) {
+        return "audio";
+    }
+
+    if (["html", "htm"].includes(extension)) {
+        return "html";
+    }
+
+    if (["md", "markdown", "mdown", "mkdn"].includes(extension)) {
+        return "markdown";
+    }
+
+    return "";
+}
+
+function detectLanguage(path) {
+    const extension = getExtension(path);
+
+    const languages = {
+        js: "javascript",
+        mjs: "javascript",
+        cjs: "javascript",
+        jsx: "javascript",
+        ts: "typescript",
+        tsx: "typescript",
+        html: "xml",
+        htm: "xml",
+        xhtml: "xml",
+        xml: "xml",
+        svg: "xml",
+        css: "css",
+        scss: "css",
+        less: "css",
+        php: "php",
+        py: "python",
+        pyw: "python",
+        json: "json",
+        jsonc: "json",
+        yaml: "yaml",
+        yml: "yaml",
+        sql: "sql",
+        sh: "bash",
+        bash: "bash",
+        zsh: "bash",
+        java: "java",
+        c: "c",
+        h: "c",
+        cpp: "cpp",
+        cc: "cpp",
+        cxx: "cpp",
+        hpp: "cpp",
+        cs: "csharp",
+        go: "go",
+        rs: "rust",
+        md: "markdown",
+        markdown: "markdown"
+    };
+
+    return languages[extension] || "";
+}
+
+function getExtension(path) {
+    const name = path.split("/").pop().toLowerCase();
+    const dot = name.lastIndexOf(".");
+
+    return dot === -1 ? "" : name.slice(dot + 1);
+}
+
+function buildRawUrl(path) {
+    return `https://raw.githubusercontent.com/${encodeURIComponent(currentRepo.owner.login)}/${encodeURIComponent(currentRepo.name)}/${encodeURIComponent(currentBranch)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+async function downloadCurrentFile() {
+    if (!currentFile) {
+        return;
+    }
+
+    $("downloadMenu").classList.remove("open");
+
+    try {
+        setStatus(`Скачиваем ${currentFile.path}...`);
+        const response = await fetch(currentFileRawUrl, {
+            headers: token ? { Authorization: "Bearer " + token } : {}
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        saveBlob(blob, currentFile.path.split("/").pop());
+        setStatus(`Файл скачан: ${currentFile.path}`, "ok");
+    } catch (error) {
+        setStatus("Ошибка скачивания: " + error.message, "err");
+    }
+}
+
+function toggleDownloadMenu() {
+    if (!currentFile) {
+        return;
+    }
+
+    $("downloadMenu").classList.toggle("open");
+}
+
+async function downloadCurrentFolder() {
+    if (!currentRepo || !flatFiles.length) {
+        return;
+    }
+
+    const input = prompt(
+        "Укажи путь папки относительно корня репозитория.\n\nНапример: src или src/components\n\nОставь пустым для скачивания всего репозитория."
+    );
+
+    if (input === null) {
+        return;
+    }
+
+    const folder = input.trim().replace(/^\/+|\/+$/g, "");
+    const files = folder
+        ? flatFiles.filter(file => file.path === folder || file.path.startsWith(folder + "/"))
+        : flatFiles;
+
+    if (!files.length) {
+        setStatus("В указанной папке нет файлов.", "err");
+        return;
+    }
+
+    const zip = new JSZip();
+    const root = folder ? folder.split("/").pop() : currentRepo.name;
+
+    setStatus(`Создаём ZIP Store: 0/${files.length} файлов...`);
+    $("downloadFolder").disabled = true;
+
+    try {
+        let completed = 0;
+
+        for (const file of files) {
+            const data = await getBlobContent(file.sha);
+            const relativePath = folder
+                ? file.path.slice(folder.length).replace(/^\//, "")
+                : file.path;
+
+            zip.file(`${root}/${relativePath}`, data, {
+                binary: true,
+                compression: "STORE"
+            });
+
+            completed++;
+            setStatus(`Создаём ZIP Store: ${completed}/${files.length} файлов...`);
+        }
+
+        const blob = await zip.generateAsync({
+            type: "blob",
+            compression: "STORE",
+            streamFiles: true
+        });
+
+        saveBlob(blob, `${root}.zip`);
+        setStatus(`ZIP Store готов: ${files.length} файлов`, "ok");
+    } catch (error) {
+        setStatus("Ошибка создания ZIP: " + error.message, "err");
+    } finally {
+        $("downloadFolder").disabled = false;
+    }
+}
+
+async function getBlobContent(sha) {
+    const data = await api(
+        `/repos/${encodeURIComponent(currentRepo.owner.login)}/${encodeURIComponent(currentRepo.name)}/git/blobs/${encodeURIComponent(sha)}`
+    );
+
+    if (data.encoding !== "base64") {
+        return data.content || "";
+    }
+
+    return base64ToUint8Array(data.content || "");
+}
+
+function base64ToUint8Array(value) {
+    const binary = atob(value.replace(/\s/g, ""));
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index++) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+
+    return bytes;
+}
+
+function decodeBase64(value) {
+    const bytes = base64ToUint8Array(value);
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) {
+        return bytes + " B";
+    }
+
+    if (bytes < 1048576) {
+        return (bytes / 1024).toFixed(1) + " KB";
+    }
+
+    if (bytes < 1073741824) {
+        return (bytes / 1048576).toFixed(1) + " MB";
+    }
+
+    return (bytes / 1073741824).toFixed(1) + " GB";
+}
+
+function getIcon(name) {
+    const extension = getExtension(name);
+
+    return ({
+        js: "🟨",
+        ts: "🔷",
+        html: "🌐",
+        htm: "🌐",
+        css: "🎨",
+        json: "🔧",
+        md: "📝",
+        txt: "📄",
+        py: "🐍",
+        php: "🐘",
+        java: "☕",
+        go: "🔵",
+        rs: "🦀",
+        svg: "🖼️",
+        png: "🖼️",
+        jpg: "🖼️",
+        jpeg: "🖼️",
+        gif: "🖼️",
+        mp3: "🎵",
+        mp4: "🎬",
+        pdf: "📕",
+        zip: "📦"
+    })[extension] || "📄";
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function escapeAttribute(value) {
+    return escapeHtml(value);
+}
+
+setMode("token");
+</script>
+</body>
+</html>
