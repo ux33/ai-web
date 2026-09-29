@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Repository Viewer</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2128;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--blue:#58a6ff;--green:#238636;--red:#f85149}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input,select{font:inherit}
+button{cursor:pointer}
+.top{padding:20px;border-bottom:1px solid var(--border);background:var(--panel)}
+.top h1{margin:0 0 5px;font-size:21px}.top p{margin:0;color:var(--muted);font-size:13px}
+.controls{padding:14px;border-bottom:1px solid var(--border);background:var(--panel);display:grid;grid-template-columns:2fr 1fr auto;gap:8px}
+input,select{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 11px;outline:0}
+input:focus,select:focus{border-color:var(--blue)}
+button{background:var(--green);border:0;color:#fff;border-radius:6px;padding:9px 15px;font-weight:600}
+button.secondary{background:#21262d;border:1px solid var(--border)}
+.status{padding:9px 14px;color:var(--muted);font-size:13px;border-bottom:1px solid var(--border)}
+.status.ok{color:#3fb950}.status.err{color:var(--red)}
+.app{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 150px);min-height:500px}
+.sidebar{border-right:1px solid var(--border);overflow:auto;background:var(--panel)}
+.sidebar-head{padding:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:2}
+.repo-list{padding:7px}
+.repo{padding:9px;border-radius:6px;cursor:pointer;margin-bottom:2px}
+.repo:hover{background:var(--panel2)}.repo.active{background:#1f6feb}
+.repo-name{font-weight:600}.repo-meta{font-size:11px;color:var(--muted);margin-top:3px}.repo.active .repo-meta{color:#dbeafe}
+.main{min-width:0;display:grid;grid-template-columns:300px 1fr}
+.files{border-right:1px solid var(--border);overflow:auto;background:#11161d}
+.files-head{padding:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#11161d;z-index:2}
+.file{padding:6px 10px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file:hover{background:var(--panel2)}.file.active{background:#1f6feb}
+.folder{font-weight:600}.indent{padding-left:18px}
+.viewer{min-width:0;display:flex;flex-direction:column}
+.viewer-head{height:43px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel2);display:flex;justify-content:space-between;gap:10px}
+.path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:13px}
+.content{flex:1;overflow:auto}.content pre{margin:0;padding:18px;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;min-width:max-content}
+.placeholder{height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:30px}
+.badge{font-size:11px;color:var(--muted);white-space:nowrap}
+@media(max-width:900px){.controls{grid-template-columns:1fr}.app{grid-template-columns:220px 1fr}.main{grid-template-columns:220px 1fr}}
+@media(max-width:650px){.app{grid-template-columns:1fr;height:auto}.sidebar{height:280px;border-right:0;border-bottom:1px solid var(--border)}.main{grid-template-columns:1fr}.files{height:330px;border-right:0;border-bottom:1px solid var(--border)}.viewer{height:600px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>GitHub Repository Viewer</h1>
+  <p>Универсальный просмотрщик приватных и публичных репозиториев</p>
+</header>
+
+<section class="controls">
+  <input id="token" type="password" placeholder="GitHub token (github_pat_...)" autocomplete="off">
+  <select id="repoSelect" disabled><option>Сначала подключись</option></select>
+  <button id="connect">Подключиться</button>
+</section>
+
+<div id="status" class="status">Токен используется только в текущей вкладке и не сохраняется.</div>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <input id="repoSearch" placeholder="Поиск репозитория..." disabled>
+    </div>
+    <div id="repos" class="repo-list">
+      <div class="placeholder" style="height:150px">Введи токен и нажми «Подключиться»</div>
+    </div>
+  </aside>
+
+  <section class="main">
+    <div class="files">
+      <div class="files-head">
+        <input id="fileSearch" placeholder="Поиск файлов..." disabled>
+      </div>
+      <div id="tree"></div>
+    </div>
+
+    <div class="viewer">
+      <div class="viewer-head">
+        <div id="path" class="path">Файл не выбран</div>
+        <div id="size" class="badge"></div>
+      </div>
+      <div id="content" class="content">
+        <div class="placeholder">Выбери репозиторий и файл</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const API="https://api.github.com";
+let token="", repos=[], currentRepo=null, currentBranch="", tree=[], flatFiles=[];
+
+const $=id=>document.getElementById(id);
+
+function setStatus(text,type=""){
+  $("status").textContent=text;
+  $("status").className="status "+type;
+}
+
+async function api(path){
+  const r=await fetch(API+path,{
+    headers:{
+      "Accept":"application/vnd.github+json",
+      "Authorization":"Bearer "+token,
+      "X-GitHub-Api-Version":"2022-11-28"
+    }
+  });
+  let data=null;
+  try{data=await r.json()}catch{}
+  if(!r.ok) throw new Error(data?.message||`HTTP ${r.status}`);
+  return data;
+}
+
+$("connect").onclick=connect;
+$("token").addEventListener("keydown",e=>{if(e.key==="Enter")connect()});
+$("repoSearch").addEventListener("input",renderRepos);
+$("fileSearch").addEventListener("input",()=>renderTree($("fileSearch").value));
+
+async function connect(){
+  const value=$("token").value.trim();
+  if(!value){setStatus("Вставь GitHub token.","err");return}
+  token=value;
+  $("connect").disabled=true;
+  setStatus("Проверяем токен...");
+  try{
+    const user=await api("/user");
+    setStatus(`Авторизован как ${user.login}. Загружаем репозитории...`);
+    repos=[];
+    for(let page=1;;page++){
+      const batch=await api(`/user/repos?per_page=100&page=${page}&sort=updated`);
+      repos.push(...batch);
+      if(batch.length<100)break;
+    }
+    $("repoSearch").disabled=false;
+    $("repoSelect").disabled=false;
+    renderRepos();
+    fillRepoSelect();
+    if(repos.length) await selectRepo(repos[0]);
+    setStatus(`Готово. Найдено репозиториев: ${repos.length}`,"ok");
+  }catch(e){
+    token="";
+    setStatus("Ошибка: "+e.message,"err");
+    $("repos").innerHTML='<div class="placeholder" style="height:150px">Не удалось загрузить репозитории</div>';
+  }finally{$("connect").disabled=false}
+}
+
+function fillRepoSelect(){
+  $("repoSelect").innerHTML=repos.map((r,i)=>
+    `<option value="${i}">${escapeHtml((r.private?"🔒 ":"🌐 ")+r.full_name)}</option>`
+  ).join("");
+  $("repoSelect").onchange=()=>selectRepo(repos[+$("repoSelect").value]);
+}
+
+function renderRepos(){
+  const q=$("repoSearch").value.toLowerCase().trim();
+  const list=repos.filter(r=>(r.full_name+" "+(r.description||"")).toLowerCase().includes(q));
+  $("repos").innerHTML=list.length?list.map(r=>`
+    <div class="repo ${currentRepo?.id===r.id?"active":""}" data-id="${r.id}">
+      <div class="repo-name">${r.private?"🔒":"🌐"} ${escapeHtml(r.full_name)}</div>
+      <div class="repo-meta">${escapeHtml(r.description||"Без описания")}</div>
+    </div>`).join(""):'<div class="placeholder" style="height:150px">Ничего не найдено</div>';
+  $("repos").querySelectorAll(".repo").forEach(el=>{
+    el.onclick=()=>selectRepo(repos.find(r=>r.id==el.dataset.id));
+  });
+}
+
+async function selectRepo(repo){
+  if(!repo)return;
+  currentRepo=repo;
+  $("repoSelect").value=repos.indexOf(repo);
+  renderRepos();
+  $("tree").innerHTML='<div class="placeholder">Загрузка файлов...</div>';
+  $("fileSearch").disabled=true;
+  $("content").innerHTML='<div class="placeholder">Загрузка репозитория...</div>';
+  try{
+    const full=await api(`/repos/${encodeURIComponent(repo.owner.login)}/${encodeURIComponent(repo.name)}`);
+    currentBranch=full.default_branch;
+    const data=await api(`/repos/${encodeURIComponent(repo.owner.login)}/${encodeURIComponent(repo.name)}/git/trees/${encodeURIComponent(currentBranch)}?recursive=1`);
+    tree=data.tree||[];
+    flatFiles=tree.filter(x=>x.type==="blob");
+    $("fileSearch").disabled=false;
+    renderTree();
+    $("content").innerHTML=`<div class="placeholder">${escapeHtml(repo.full_name)}<br><br>Ветка: ${escapeHtml(currentBranch)}<br>Файлов: ${flatFiles.length}</div>`;
+    setStatus(`${repo.full_name} • ${currentBranch} • ${flatFiles.length} файлов`,"ok");
+  }catch(e){
+    $("tree").innerHTML=`<div class="placeholder">${escapeHtml(e.message)}</div>`;
+    setStatus("Ошибка загрузки репозитория: "+e.message,"err");
+  }
+}
+
+function renderTree(query=""){
+  const q=query.toLowerCase().trim();
+  const files=flatFiles.filter(x=>!q||x.path.toLowerCase().includes(q));
+  const root={};
+  for(const item of files){
+    const parts=item.path.split("/");
+    let node=root;
+    parts.forEach((part,i)=>{
+      node[part]??={__item:null,__children:{}};
+      if(i===parts.length-1)node[part].__item=item;
+      else node=node[part].__children;
+    });
+  }
+  $("tree").innerHTML="";
+  renderNodes(root,$("tree"),0);
+  if(!files.length)$("tree").innerHTML='<div class="placeholder" style="height:150px">Файлы не найдены</div>';
+}
+
+function renderNodes(nodes,container,depth){
+  const names=Object.keys(nodes).sort((a,b)=>{
+    const af=Object.keys(nodes[a].__children).length>0,bf=Object.keys(nodes[b].__children).length>0;
+    return af!==bf?(bf-af):a.localeCompare(b);
+  });
+  for(const name of names){
+    const n=nodes[name], folder=Object.keys(n.__children).length>0;
+    const el=document.createElement("div");
+    el.className="file "+(folder?"folder":"");
+    el.style.paddingLeft=(10+depth*18)+"px";
+    el.textContent=(folder?"📁 ":"")+(!folder?getIcon(name)+" ":"")+name;
+    if(folder){
+      const wrap=document.createElement("div");
+      wrap.style.display="none";
+      el.onclick=()=>{
+        const open=wrap.style.display!=="none";
+        wrap.style.display=open?"none":"block";
+        el.textContent=(open?"📁 ":"📂 ")+name;
+      };
+      container.appendChild(el);
+      renderNodes(n.__children,wrap,depth+1);
+      container.appendChild(wrap);
+    }else{
+      el.onclick=()=>openFile(n.__item,el);
+      container.appendChild(el);
+    }
+  }
+}
+
+async function openFile(item,el){
+  document.querySelectorAll(".file.active").forEach(x=>x.classList.remove("active"));
+  el.classList.add("active");
+  $("path").textContent=item.path;
+  $("size").textContent=formatBytes(item.size||0);
+  $("content").innerHTML='<div class="placeholder">Загрузка...</div>';
+  try{
+    const d=await api(`/repos/${encodeURIComponent(currentRepo.owner.login)}/${encodeURIComponent(currentRepo.name)}/contents/${item.path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(currentBranch)}`);
+    if(d.type!=="file")throw new Error("GitHub вернул не файл");
+    if(d.size>1000000)throw new Error("Файл слишком большой для просмотра через этот интерфейс (> 1 MB).");
+    const text=decodeBase64(d.content||"");
+    const pre=document.createElement("pre");
+    pre.textContent=text;
+    $("content").innerHTML="";
+    $("content").appendChild(pre);
+  }catch(e){
+    $("content").innerHTML=`<div class="placeholder">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function decodeBase64(s){
+  const bin=atob(s.replace(/\s/g,""));
+  const bytes=Uint8Array.from(bin,c=>c.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+function formatBytes(n){
+  if(n<1024)return n+" B";
+  if(n<1048576)return (n/1024).toFixed(1)+" KB";
+  if(n<1073741824)return (n/1048576).toFixed(1)+" MB";
+  return (n/1073741824).toFixed(1)+" GB";
+}
+function getIcon(name){
+  const e=name.split(".").pop().toLowerCase();
+  return ({js:"🟨",ts:"🔷",html:"🌐",css:"🎨",json:"🔧",md:"📝",txt:"📄",py:"🐍",java:"☕",go:"🔵",rs:"🦀",svg:"🖼️",png:"🖼️",jpg:"🖼️",jpeg:"🖼️",pdf:"📕",zip:"📦"})[e]||"📄";
+}
+function escapeHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+}
+</script>
+</body>
+</html>
