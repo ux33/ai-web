@@ -1,0 +1,105 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Поиск недостающих файлов</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+  }
+
+  .container {
+    display: flex;
+    gap: 12px;
+  }
+
+  .column {
+    flex: 1;
+    min-width: 0;
+  }
+
+  h3 {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+
+  .count {
+    color: #087f23;
+    font-weight: bold;
+  }
+
+  textarea {
+    width: 100%;
+    height: 350px;
+    box-sizing: border-box;
+    padding: 10px;
+    resize: vertical;
+    font: 14px monospace;
+  }
+
+  @media (max-width: 700px) {
+    .container {
+      flex-direction: column;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="column">
+    <h3>1. Всего: <span class="count" id="countAll">0</span></h3>
+    <textarea id="all" placeholder="Полный список файлов"></textarea>
+  </div>
+
+  <div class="column">
+    <h3>2. Есть: <span class="count" id="countHave">0</span></h3>
+    <textarea id="have" placeholder="Имеющиеся файлы"></textarea>
+  </div>
+
+  <div class="column">
+    <h3>3. Не хватает: <span class="count" id="countMissing">0</span></h3>
+    <textarea id="missing" readonly></textarea>
+  </div>
+</div>
+
+<script>
+const all = document.getElementById('all');
+const have = document.getElementById('have');
+const missing = document.getElementById('missing');
+
+function getFiles(text) {
+  return text.split(/\r?\n/)
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+function checkFiles() {
+  const allFiles = getFiles(all.value);
+  const haveFiles = getFiles(have.value);
+  const existing = new Set(haveFiles);
+
+  const result = allFiles.filter(file => !existing.has(file));
+
+  missing.value = result.join('\n');
+
+  document.getElementById('countAll').textContent =
+    allFiles.length;
+
+  document.getElementById('countHave').textContent =
+    haveFiles.length;
+
+  document.getElementById('countMissing').textContent =
+    result.length;
+}
+
+all.addEventListener('input', checkFiles);
+have.addEventListener('input', checkFiles);
+
+checkFiles();
+</script>
+
+</body>
+</html>
