@@ -1,0 +1,322 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiiTDB XML Filter</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 1100px;
+    margin: 24px auto;
+    padding: 0 16px;
+    background: #f5f6f8;
+    color: #222;
+  }
+  h1 { font-size: 25px; }
+  h2 { font-size: 18px; margin-top: 22px; }
+  .panel {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 16px;
+    margin: 14px 0;
+  }
+  textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 220px;
+    font: 13px monospace;
+    padding: 10px;
+  }
+  #result { min-height: 300px; }
+  #categories {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 8px;
+  }
+  .category {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    background: #f5f6f8;
+    border-radius: 6px;
+    overflow-wrap: anywhere;
+  }
+  button {
+    padding: 10px 14px;
+    margin: 5px 5px 5px 0;
+    cursor: pointer;
+  }
+  .status { white-space: pre-wrap; }
+  .hint { color: #555; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>WiiTDB XML Filter</h1>
+<p class="hint">
+Загрузи wiitdb.xml, отметь категории, которые нужно удалить,
+и сформируй новый XML. Всё работает локально в браузере.
+</p>
+
+<div class="panel">
+  <h2>1. Загрузить XML</h2>
+  <input type="file" id="file" accept=".xml,text/xml">
+  <p>Или вставь содержимое XML вручную:</p>
+  <textarea id="source" placeholder="Вставь сюда содержимое wiitdb.xml"></textarea>
+  <button id="scan">Сканировать XML</button>
+  <div id="status" class="status"></div>
+</div>
+
+<div class="panel">
+  <h2>2. Выбрать категории для удаления</h2>
+  <button id="selectAll">Отметить все</button>
+  <button id="clearAll">Снять все</button>
+  <button id="selectVC">Отметить только VC-*</button>
+  <div id="categories"></div>
+  <p class="hint">
+    Игра удаляется, если относится хотя бы к одной отмеченной категории.
+  </p>
+  <button id="process">Удалить выбранные категории</button>
+</div>
+
+<div class="panel">
+  <h2>3. Результат</h2>
+  <textarea id="result" placeholder="Здесь появится обработанный XML"></textarea>
+  <br>
+  <button id="copy">Копировать результат</button>
+  <button id="download">Скачать XML</button>
+  <div id="resultStatus" class="status"></div>
+</div>
+
+<script>
+let parsedDocument = null;
+let categoryCounts = new Map();
+
+const $ = id => document.getElementById(id);
+
+function gamesIn(doc) {
+  return [...doc.getElementsByTagName('*')]
+    .filter(el => el.localName.toLowerCase() === 'game');
+}
+
+function typesIn(game) {
+  const values = [];
+
+  // Атрибуты type/category самого элемента game
+  for (const attr of game.attributes) {
+    if (/^(type|category)$/i.test(attr.name) && attr.value.trim()) {
+      values.push(attr.value.trim());
+    }
+  }
+
+  // Ищем вложенные теги type/category
+  const descendants = [...game.getElementsByTagName('*')];
+
+  for (const el of descendants) {
+    const tag = el.localName.toLowerCase();
+
+    if (tag !== 'type' && tag !== 'category') continue;
+
+    const value = (el.textContent || '').trim();
+
+    if (value) values.push(value);
+
+    for (const attr of el.attributes) {
+      if (/^(type|category)$/i.test(attr.name) && attr.value.trim()) {
+        values.push(attr.value.trim());
+      }
+    }
+  }
+
+  // Обычные игры Wii обозначаются пустым <type/>
+  const typeElements = descendants.filter(
+    el => el.localName.toLowerCase() === 'type'
+  );
+
+  const hasEmptyType = typeElements.some(
+    el => !(el.textContent || '').trim()
+  );
+
+  const hasNamedType = typeElements.some(
+    el => (el.textContent || '').trim() !== ''
+  );
+
+  // Добавляем отдельную категорию, только если type пустой
+  // и ни один type не содержит названия другой категории.
+  if (typeElements.length > 0 && hasEmptyType && !hasNamedType) {
+    values.push('Wii — обычные игры');
+  }
+
+  return [...new Set(values)];
+}
+
+function parseXML(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+
+  if (doc.getElementsByTagName('parsererror').length) {
+    throw new Error('XML содержит ошибку. Проверь исходный файл.');
+  }
+
+  if (!gamesIn(doc).length) {
+    throw new Error('В XML не найдены элементы <game>.');
+  }
+
+  return doc;
+}
+
+function scan() {
+  $('status').textContent = '';
+  $('categories').innerHTML = '';
+  categoryCounts = new Map();
+
+  try {
+    parsedDocument = parseXML($('source').value);
+  } catch (error) {
+    parsedDocument = null;
+    $('status').textContent = error.message;
+    return;
+  }
+
+  const games = gamesIn(parsedDocument);
+
+  for (const game of games) {
+    for (const type of typesIn(game)) {
+      categoryCounts.set(type, (categoryCounts.get(type) || 0) + 1);
+    }
+  }
+
+  const sorted = [...categoryCounts.entries()].sort((a, b) => {
+    if (a[0] === 'Wii — обычные игры') return -1;
+    if (b[0] === 'Wii — обычные игры') return 1;
+    return a[0].localeCompare(b[0], 'ru');
+  });
+
+  for (const [type, count] of sorted) {
+    const label = document.createElement('label');
+    label.className = 'category';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = type;
+    checkbox.className = 'categoryCheck';
+
+    const text = document.createElement('span');
+    text.textContent = `${type} (${count})`;
+
+    label.append(checkbox, text);
+    $('categories').appendChild(label);
+  }
+
+  $('status').textContent =
+    `Найдено игр: ${games.length}\nКатегорий: ${categoryCounts.size}`;
+}
+
+function selectedCategories() {
+  return new Set(
+    [...document.querySelectorAll('.categoryCheck:checked')]
+      .map(el => el.value)
+  );
+}
+
+function processXML() {
+  $('resultStatus').textContent = '';
+
+  if (!parsedDocument) {
+    $('resultStatus').textContent = 'Сначала просканируй XML.';
+    return;
+  }
+
+  const selected = selectedCategories();
+
+  // Работаем с копией, чтобы исходный документ не менялся.
+  const doc = parseXML($('source').value);
+  const games = gamesIn(doc);
+  let removed = 0;
+
+  for (const game of games) {
+    if (typesIn(game).some(type => selected.has(type))) {
+      game.parentNode.removeChild(game);
+      removed++;
+    }
+  }
+
+  const output = new XMLSerializer().serializeToString(doc);
+  $('result').value = '<?xml version="1.0" encoding="UTF-8"?>\n' + output;
+
+  $('resultStatus').textContent =
+    `Удалено игр: ${removed}\nОсталось игр: ${games.length - removed}`;
+}
+
+$('file').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  $('source').value = await file.text();
+  scan();
+});
+
+$('scan').addEventListener('click', scan);
+
+$('selectAll').addEventListener('click', () => {
+  document.querySelectorAll('.categoryCheck')
+    .forEach(el => el.checked = true);
+});
+
+$('clearAll').addEventListener('click', () => {
+  document.querySelectorAll('.categoryCheck')
+    .forEach(el => el.checked = false);
+});
+
+$('selectVC').addEventListener('click', () => {
+  document.querySelectorAll('.categoryCheck').forEach(el => {
+    el.checked = /^VC-/i.test(el.value);
+  });
+});
+
+$('process').addEventListener('click', processXML);
+
+$('copy').addEventListener('click', async () => {
+  if (!$('result').value) {
+    $('resultStatus').textContent = 'Сначала сформируй результат.';
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText($('result').value);
+    $('resultStatus').textContent = 'XML скопирован.';
+  } catch {
+    $('result').select();
+    document.execCommand('copy');
+    $('resultStatus').textContent = 'Попытка копирования выполнена.';
+  }
+});
+
+$('download').addEventListener('click', () => {
+  const content = $('result').value;
+
+  if (!content) {
+    $('resultStatus').textContent = 'Сначала сформируй результат.';
+    return;
+  }
+
+  const blob = new Blob([content], {
+    type: 'application/xml;charset=utf-8'
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = 'wiitdb_filtered.xml';
+  link.click();
+
+  URL.revokeObjectURL(url);
+});
+</script>
+
+</body>
+</html>
