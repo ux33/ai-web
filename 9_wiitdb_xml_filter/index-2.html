@@ -1,0 +1,431 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiiTDB XML Filter</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 1100px;
+    margin: 24px auto;
+    padding: 0 16px;
+    background: #f5f6f8;
+    color: #222;
+  }
+  h1 { font-size: 25px; }
+  h2 { font-size: 18px; margin-top: 22px; }
+  .panel {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 16px;
+    margin: 14px 0;
+  }
+  textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 220px;
+    font: 13px monospace;
+    padding: 10px;
+  }
+  #result { min-height: 300px; }
+  #categories {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 8px;
+  }
+  .category {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    background: #f5f6f8;
+    border-radius: 6px;
+    overflow-wrap: anywhere;
+  }
+  button {
+    padding: 10px 14px;
+    margin: 5px 5px 5px 0;
+    cursor: pointer;
+  }
+  .status {
+    white-space: pre-wrap;
+    margin-top: 10px;
+  }
+  .hint { color: #555; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>WiiTDB XML Filter</h1>
+<p class="hint">
+  Загрузи wiitdb.xml, выбери категории для удаления и сформируй
+  новый XML. Можно также создать текстовый список ID и названий игр.
+  Всё работает локально в браузере.
+</p>
+
+<div class="panel">
+  <h2>1. Загрузить XML</h2>
+  <input type="file" id="file" accept=".xml,text/xml">
+  <p>Или вставь содержимое XML вручную:</p>
+  <textarea id="source" placeholder="Вставь сюда содержимое wiitdb.xml"></textarea>
+  <button id="scan">Сканировать XML</button>
+  <div id="status" class="status"></div>
+</div>
+
+<div class="panel">
+  <h2>2. Выбрать категории для удаления</h2>
+  <button id="selectAll">Отметить все</button>
+  <button id="clearAll">Снять все</button>
+  <button id="selectVC">Отметить только VC-*</button>
+  <div id="categories"></div>
+  <p class="hint">
+    Игра удаляется, если относится хотя бы к одной отмеченной категории.
+  </p>
+  <button id="process">Удалить выбранные категории</button>
+</div>
+
+<div class="panel">
+  <h2>3. Результат</h2>
+  <textarea id="result" placeholder="Здесь появится обработанный XML"></textarea>
+  <br>
+  <button id="copy">Копировать результат</button>
+  <button id="download">Скачать XML</button>
+  <button id="downloadTxt">Создать id+title.txt</button>
+  <div id="resultStatus" class="status"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let parsedDocument = null;
+
+function allElementsByName(parent, name) {
+  return [...parent.getElementsByTagName('*')].filter(
+    el => el.localName.toLowerCase() === name.toLowerCase()
+  );
+}
+
+function gamesIn(doc) {
+  return allElementsByName(doc, 'game');
+}
+
+function directChildText(element, childName) {
+  for (const child of element.children) {
+    if (child.localName.toLowerCase() === childName.toLowerCase()) {
+      return (child.textContent || '').trim();
+    }
+  }
+  return '';
+}
+
+function typesIn(game) {
+  const values = [];
+  const descendants = [...game.getElementsByTagName('*')];
+
+  // Атрибуты type/category на самом game
+  for (const attr of game.attributes) {
+    if (/^(type|category)$/i.test(attr.name) && attr.value.trim()) {
+      values.push(attr.value.trim());
+    }
+  }
+
+  // Вложенные type/category
+  for (const el of descendants) {
+    const tag = el.localName.toLowerCase();
+
+    if (tag !== 'type' && tag !== 'category') continue;
+
+    const value = (el.textContent || '').trim();
+    if (value) values.push(value);
+
+    for (const attr of el.attributes) {
+      if (/^(type|category)$/i.test(attr.name) && attr.value.trim()) {
+        values.push(attr.value.trim());
+      }
+    }
+  }
+
+  // Обычные игры Wii: в записи есть пустой <type/>
+  const typeElements = descendants.filter(
+    el => el.localName.toLowerCase() === 'type'
+  );
+
+  const hasEmptyType = typeElements.some(
+    el => !(el.textContent || '').trim()
+  );
+
+  const hasNamedType = typeElements.some(
+    el => (el.textContent || '').trim() !== ''
+  );
+
+  // Не относим к обычным Wii записи, где type содержит название категории.
+  if (typeElements.length > 0 && hasEmptyType && !hasNamedType) {
+    values.push('Wii — обычные игры');
+  }
+
+  return [...new Set(values)];
+}
+
+function parseXML(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+
+  if (allElementsByName(doc, 'parsererror').length) {
+    throw new Error('Ошибка XML. Проверь исходный файл.');
+  }
+
+  if (!gamesIn(doc).length) {
+    throw new Error('В XML не найдены элементы <game>.');
+  }
+
+  return doc;
+}
+
+function scan() {
+  $('status').textContent = '';
+  $('categories').innerHTML = '';
+  parsedDocument = null;
+
+  let doc;
+
+  try {
+    doc = parseXML($('source').value);
+    parsedDocument = doc;
+  } catch (error) {
+    $('status').textContent = error.message;
+    return;
+  }
+
+  const counts = new Map();
+
+  for (const game of gamesIn(doc)) {
+    for (const category of typesIn(game)) {
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+  }
+
+  const sorted = [...counts.entries()].sort((a, b) => {
+    if (a[0] === 'Wii — обычные игры') return -1;
+    if (b[0] === 'Wii — обычные игры') return 1;
+    return a[0].localeCompare(b[0], 'ru');
+  });
+
+  for (const [category, count] of sorted) {
+    const label = document.createElement('label');
+    label.className = 'category';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = category;
+    checkbox.className = 'categoryCheck';
+
+    const text = document.createElement('span');
+    text.textContent = `${category} (${count})`;
+
+    label.append(checkbox, text);
+    $('categories').appendChild(label);
+  }
+
+  $('status').textContent =
+    `Найдено игр: ${gamesIn(doc).length}\nКатегорий: ${counts.size}`;
+}
+
+function selectedCategories() {
+  return new Set(
+    [...document.querySelectorAll('.categoryCheck:checked')]
+      .map(el => el.value)
+  );
+}
+
+function serializeXML(doc) {
+  let xml = new XMLSerializer().serializeToString(doc);
+
+  // Удаляем любую существующую XML-декларацию,
+  // а затем добавляем ровно одну.
+  xml = xml.replace(/^\uFEFF?\s*<\?xml[^?]*\?>\s*/i, '');
+
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + xml;
+}
+
+function processXML() {
+  $('resultStatus').textContent = '';
+
+  if (!parsedDocument) {
+    $('resultStatus').textContent = 'Сначала просканируй XML.';
+    return;
+  }
+
+  const selected = selectedCategories();
+
+  let doc;
+
+  try {
+    // Каждый раз начинаем с оригинального XML.
+    doc = parseXML($('source').value);
+  } catch (error) {
+    $('resultStatus').textContent = error.message;
+    return;
+  }
+
+  const games = gamesIn(doc);
+  let removed = 0;
+
+  for (const game of games) {
+    if (typesIn(game).some(category => selected.has(category))) {
+      game.parentNode.removeChild(game);
+      removed++;
+    }
+  }
+
+  $('result').value = serializeXML(doc);
+
+  $('resultStatus').textContent =
+    `Удалено игр: ${removed}\nОсталось игр: ${gamesIn(doc).length}\nXML сформирован.`;
+}
+
+function makeTextList() {
+  $('resultStatus').textContent = '';
+
+  if (!$('result').value.trim()) {
+    $('resultStatus').textContent =
+      'Сначала сформируй XML кнопкой «Удалить выбранные категории».';
+    return;
+  }
+
+  let doc;
+
+  try {
+    doc = parseXML($('result').value);
+  } catch (error) {
+    $('resultStatus').textContent =
+      'Не удалось прочитать результирующий XML: ' + error.message;
+    return;
+  }
+
+  const groups = new Map();
+
+  for (const game of gamesIn(doc)) {
+    const id = directChildText(game, 'id');
+    const title = game.getAttribute('name') || '';
+
+    if (!id) continue;
+
+    const categories = typesIn(game);
+
+    for (const category of categories) {
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push({ id, title });
+    }
+  }
+
+  const sortedCategories = [...groups.keys()].sort((a, b) => {
+    if (a === 'Wii — обычные игры') return -1;
+    if (b === 'Wii — обычные игры') return 1;
+    return a.localeCompare(b, 'ru');
+  });
+
+  const lines = [];
+
+  for (const category of sortedCategories) {
+    const games = groups.get(category);
+
+    lines.push(`; ${category} (${games.length})`);
+
+    for (const game of games) {
+      lines.push(`${game.id} = ${game.title}`);
+    }
+
+    lines.push('');
+  }
+
+  const content = lines.join('\n').trimEnd() + '\n';
+
+  downloadFile(content, 'id+title.txt', 'text/plain;charset=utf-8');
+
+  $('resultStatus').textContent =
+    `Создан id+title.txt\nКатегорий: ${groups.size}\nЗаписей в списке: ${
+      [...groups.values()].reduce((sum, list) => sum + list.length, 0)
+    }`;
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+$('file').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  $('source').value = await file.text();
+  scan();
+});
+
+$('scan').addEventListener('click', scan);
+
+$('selectAll').addEventListener('click', () => {
+  document.querySelectorAll('.categoryCheck')
+    .forEach(el => el.checked = true);
+});
+
+$('clearAll').addEventListener('click', () => {
+  document.querySelectorAll('.categoryCheck')
+    .forEach(el => el.checked = false);
+});
+
+$('selectVC').addEventListener('click', () => {
+  document.querySelectorAll('.categoryCheck').forEach(el => {
+    el.checked = /^VC-/i.test(el.value);
+  });
+});
+
+$('process').addEventListener('click', processXML);
+
+$('copy').addEventListener('click', async () => {
+  const content = $('result').value;
+
+  if (!content) {
+    $('resultStatus').textContent = 'Сначала сформируй результат.';
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(content);
+    $('resultStatus').textContent = 'XML скопирован.';
+  } catch {
+    $('result').focus();
+    $('result').select();
+    const success = document.execCommand('copy');
+    $('resultStatus').textContent = success
+      ? 'XML скопирован.'
+      : 'Не удалось скопировать автоматически. Выдели текст вручную.';
+  }
+});
+
+$('download').addEventListener('click', () => {
+  const content = $('result').value;
+
+  if (!content) {
+    $('resultStatus').textContent = 'Сначала сформируй результат.';
+    return;
+  }
+
+  downloadFile(content, 'wiitdb_filtered.xml', 'application/xml;charset=utf-8');
+});
+
+$('downloadTxt').addEventListener('click', makeTextList);
+</script>
+
+</body>
+</html>
